@@ -1,18 +1,25 @@
+"use client";
+
+import { useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 
-import { auditFlags } from "@/lib/mock/dashboard-data";
 import { RiskBadge } from "@/components/dashboard/risk-badge";
+import { selectAuditFlagsPanel } from "@/lib/report-analytics";
+import { useReportsStore } from "@/store/useReportsStore";
 
 export function AuditFlagsPanel() {
+  const reports = useReportsStore((s) => s.reports);
+  const flags = useMemo(() => selectAuditFlagsPanel(reports), [reports]);
+
   return (
     <section className="rounded-xl border border-white/10 bg-[#071225] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-geist text-lg text-zinc-100">Active Audit Flags</h3>
-        <button className="text-xs text-zinc-500 hover:text-zinc-300">View all</button>
+        <span className="text-xs text-zinc-500">{flags.length} shown</span>
       </div>
       <div className="space-y-3">
-        {auditFlags.map((flag) => (
-          <article key={flag.title} className="rounded-md border border-white/10 bg-[#081326] p-3">
+        {flags.map((flag) => (
+          <article key={`${flag.title}-${flag.ago}`} className="rounded-md border border-white/10 bg-[#081326] p-3">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 size-4 text-rose-300" />
               <div className="min-w-0 flex-1">

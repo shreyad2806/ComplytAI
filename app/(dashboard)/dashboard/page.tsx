@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 
 import { AnalyticsGrid } from "@/components/analytics/analytics-grid";
@@ -9,9 +11,13 @@ import { AuditFlagsPanel } from "@/components/dashboard/audit-flags-panel";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { fadeUp, stagger } from "@/components/shared/motion";
 import { UploadPanel } from "@/components/upload/upload-panel";
-import { metricCards } from "@/lib/mock/dashboard-data";
+import { selectDashboardMetrics } from "@/lib/report-analytics";
+import { useReportsStore } from "@/store/useReportsStore";
 
 export default function DashboardPage() {
+  const reports = useReportsStore((s) => s.reports);
+  const metrics = useMemo(() => selectDashboardMetrics(reports), [reports]);
+
   return (
     <motion.div initial="hidden" animate="show" variants={stagger} className="mx-auto w-full max-w-[1400px]">
       <motion.section variants={fadeUp} className="mb-5">
@@ -22,18 +28,24 @@ export default function DashboardPage() {
             <p className="text-sm text-zinc-400">AI-powered risk intelligence and compliance analysis</p>
           </div>
           <div className="flex gap-2">
-            <button className="rounded-md border border-white/10 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
+            <Link
+              href="/dashboard/copilot"
+              className="rounded-md border border-white/10 bg-zinc-900 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+            >
               Document Analysis
-            </button>
-            <button className="rounded-md border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+            </Link>
+            <Link
+              href="/dashboard/copilot"
+              className="rounded-md border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200 hover:bg-cyan-500/15"
+            >
               AI Copilot
-            </button>
+            </Link>
           </div>
         </div>
       </motion.section>
 
       <motion.section variants={fadeUp} className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {metricCards.map((metric) => (
+        {metrics.map((metric) => (
           <MetricCard key={metric.title} {...metric} />
         ))}
       </motion.section>

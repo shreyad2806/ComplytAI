@@ -1,47 +1,358 @@
-import { AIRecommendationsSection } from "@/components/report/ai-recommendations";
-import { AnalyticsSection } from "@/components/report/analytics-section";
-import { AuditFlagsSection } from "@/components/report/audit-flags";
-import { ComplianceScoreSection } from "@/components/report/compliance-score";
-import { ExecutiveSummary } from "@/components/report/executive-summary";
-import { ReportFooter } from "@/components/report/report-footer";
-import { ReportHeader } from "@/components/report/report-header";
-import { ReportHero } from "@/components/report/report-hero";
-import { RiskAnalysisSection } from "@/components/report/risk-analysis";
-import { StrategicIntelligenceSection } from "@/components/report/strategic-intelligence";
-import { getReportMeta } from "@/lib/mock/report-data";
-import type { Metadata } from "next";
+"use client";
 
-type PageProps = {
-  params: Promise<{ id: string }>;
-};
+import { useComplytStore } from "@/store/useComplytStore";
+import { useReportsStore } from "@/store/useReportsStore";
+import { useRouter, useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { RiskScoreCard } from "@/components/dashboard/RiskScoreCard";
+import { normalizeReport, persistedToComplianceReport } from "@/lib/normalize-report";
+import {
+  AlertTriangle,
+  ShieldCheck,
+  Flag,
+  Lightbulb,
+  TrendingUp,
+  ArrowLeft,
+} from "lucide-react";
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { id } = await params;
-  const meta = getReportMeta(decodeURIComponent(id));
-  return {
-    title: `${meta.reportId} — Intelligence Report | Complyt AI`,
-    description: `AI compliance intelligence analysis for ${meta.clientName}.`,
-  };
+const priorityColors = {
+  immediate: "text-red-400 bg-red-500/10 border-red-500/30",
+  short_term: "text-yellow-400 bg-yellow-500/10 border-yellow-500/30",
+  long_term: "text-green-400 bg-green-500/10 border-green-500/30",
+} as const;
+
+const severityColors = {
+  critical: "bg-red-500 text-white",
+  high: "bg-orange-500 text-white",
+  medium: "bg-yellow-500 text-black",
+  low: "bg-green-500 text-black",
+} as const;
+
+function complianceStatusClass(status: string): string {
+  const s = status.toLowerCase().replace(/-/g, "_");
+  if (s === "open")
+    return "text-red-400 bg-red-500/10 border-red-500/30";
+  if (s === "in_review")
+    return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
+  return "text-green-400 bg-green-500/10 border-green-500/30";
 }
 
-export default async function IntelligenceReportPage({ params }: PageProps) {
-  const { id } = await params;
-  const meta = getReportMeta(decodeURIComponent(id));
+function useReportsHydrated(): boolean {
+  const [ok, setOk] = useState(() => useReportsStore.persist?.hasHydrated?.() ?? true);
+  useEffect(() => {
+    const done = useReportsStore.persist?.hasHydrated?.() ?? true;
+    if (done) setOk(true);
+    const unsub = useReportsStore.persist?.onFinishHydration?.(() => {
+      setOk(true);
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, []);
+  return ok;
+}
+
+export default function ReportPage() {
+  const params = useParams();
+  const id = typeof params?.id === "string" ? params.id : params?.id?.[0];
+  const hydrated = useReportsHydrated();
+  const persisted = useReportsStore((s) => (id ? s.getReport(id) : undefined));
+  const { clearReport } = useComplytStore();
+  const router = useRouter();
+
+  const normalizedReport = useMemo(
+    () => (persisted ? persistedToComplianceReport(persisted) : null),
+    [persisted]
+  );
+
+  const reportData = useMemo(
+    () => persisted ?? {},
+    [persisted]
+  );
+
+  useEffect(() => {
+    if (!persisted) return;
+    console.log("[report] persisted snapshot + normalized", {
+      persisted,
+      normalized: normalizeReport(persisted),
+    });
+  }, [persisted]);
+
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
+        Loading report…
+      </div>
+    );
+  }
+
+  if (!id || !persisted || !normalizedReport) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center max-w-md px-4">
+          <p className="text-slate-400 mb-4">Report not found.</p>
+          <p className="text-slate-500 text-sm mb-6">
+            This analysis may have been removed or never saved in this browser.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/copilot")}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+          >
+            Go to AI Copilot
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const r = normalizedReport;
+  const financialRisks = r?.financial_risks ?? [];
+  const complianceIssues = r?.compliance_issues ?? [];
+  const auditFlags = r?.audit_flags ?? [];
+  const recommendations = r?.recommendations ?? [];
+  const keyInsights = r?.key_insights ?? [];
 
   return (
-    <div
-      className="min-h-full bg-[#09090b] text-zinc-100 [background-image:linear-gradient(to_right,rgba(39,39,42,0.09)_1px,transparent_1px),linear-gradient(to_bottom,rgba(39,39,42,0.09)_1px,transparent_1px)] [background-size:28px_28px]"
-    >
-      <ReportHeader reportId={meta.reportId} />
-      <ReportHero meta={meta} />
-      <ExecutiveSummary />
-      <ComplianceScoreSection />
-      <RiskAnalysisSection />
-      <AuditFlagsSection />
-      <AIRecommendationsSection />
-      <AnalyticsSection />
-      <StrategicIntelligenceSection />
-      <ReportFooter meta={meta} />
+    <div className="min-h-screen bg-slate-950 text-white">
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              clearReport();
+              router.push("/dashboard");
+            }}
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Dashboard
+          </button>
+          <div className="w-px h-4 bg-slate-700" />
+          <div>
+            <h1 className="font-semibold text-white">Compliance Report</h1>
+            <p className="text-slate-500 text-xs">
+              {persisted.fileName ?? persisted.prompt?.slice(0, 80) ?? "—"}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="px-4 py-2 border border-slate-700 hover:border-slate-500 text-slate-300 rounded-lg text-sm transition-colors"
+        >
+          Export PDF
+        </button>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        <section className="rounded-xl border border-amber-500/30 bg-slate-900/80 p-4">
+          <p className="text-amber-200/90 text-xs font-medium mb-2 uppercase tracking-wide">
+            Debug — persisted report (temporary)
+          </p>
+          <pre className="max-h-96 overflow-auto text-xs text-slate-300 whitespace-pre-wrap wrap-break-word">
+            {JSON.stringify(reportData, null, 2)}
+          </pre>
+        </section>
+
+        <RiskScoreCard report={r} />
+
+        <section>
+          <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-blue-400" />
+            Executive Summary
+          </h2>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <p className="text-slate-300 leading-relaxed">
+              {r?.executive_summary ?? "—"}
+            </p>
+          </div>
+        </section>
+
+        {keyInsights.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-yellow-400" />
+              Key Insights
+            </h2>
+            <div className="grid gap-3">
+              {keyInsights.map((insight, i) => (
+                <div
+                  key={i}
+                  className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex items-start gap-3"
+                >
+                  <span className="text-yellow-400 font-bold text-sm mt-0.5 shrink-0">
+                    {i + 1}
+                  </span>
+                  <p className="text-slate-300 text-sm">
+                    {insight != null ? String(insight) : "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {financialRisks.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-400" />
+              Financial Risks ({financialRisks.length})
+            </h2>
+            <div className="space-y-3">
+              {financialRisks.map((risk, i) => {
+                const sevRaw = String(risk?.severity ?? "medium").toLowerCase();
+                const sev =
+                  sevRaw in severityColors
+                    ? (sevRaw as keyof typeof severityColors)
+                    : "medium";
+                const sevClass =
+                  severityColors[sev] ?? severityColors.medium;
+                return (
+                  <div
+                    key={i}
+                    className="bg-slate-900 border border-slate-800 rounded-xl p-5"
+                  >
+                    <div className="flex items-start justify-between mb-2 gap-2">
+                      <h3 className="font-medium text-white">
+                        {risk?.title ?? "—"}
+                      </h3>
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${sevClass}`}
+                      >
+                        {String(risk?.severity ?? "unknown").toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-slate-400 text-sm">
+                      {risk?.description ?? "—"}
+                    </p>
+                    {risk?.financial_exposure != null &&
+                      String(risk.financial_exposure).length > 0 && (
+                        <p className="text-orange-400 text-sm mt-2 font-medium">
+                          Exposure: {String(risk.financial_exposure)}
+                        </p>
+                      )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {complianceIssues.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-red-400" />
+              Compliance Issues ({complianceIssues.length})
+            </h2>
+            <div className="space-y-3">
+              {complianceIssues.map((issue, i) => {
+                const statusLabel = String(issue?.status ?? "unknown").replace(
+                  /_/g,
+                  " "
+                );
+                const statusKey = String(issue?.status ?? "open")
+                  .toLowerCase()
+                  .replace(/-/g, "_");
+                return (
+                  <div
+                    key={i}
+                    className="bg-slate-900 border border-slate-800 rounded-xl p-5"
+                  >
+                    <div className="flex items-start justify-between mb-2 gap-2">
+                      <p className="text-slate-300 text-sm flex-1 pr-4">
+                        {issue?.issue ?? "—"}
+                      </p>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${complianceStatusClass(statusKey)}`}
+                      >
+                        {statusLabel.toUpperCase()}
+                      </span>
+                    </div>
+                    {issue?.regulation != null &&
+                      String(issue.regulation).length > 0 && (
+                        <p className="text-blue-400 text-xs">
+                          {String(issue.regulation)}
+                        </p>
+                      )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {auditFlags.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <Flag className="w-5 h-5 text-purple-400" />
+              Audit Flags ({auditFlags.length})
+            </h2>
+            <div className="space-y-3">
+              {auditFlags.map((flag, i) => (
+                <div
+                  key={i}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-5"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">
+                      {flag?.category ?? "—"}
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-sm font-medium">
+                    {flag?.flag ?? "—"}
+                  </p>
+                  <p className="text-slate-500 text-sm mt-1">
+                    {flag?.details ?? "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {recommendations.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-green-400" />
+              Recommendations ({recommendations.length})
+            </h2>
+            <div className="space-y-3">
+              {recommendations.map((rec, i) => {
+                const prRaw = String(rec?.priority ?? "short_term")
+                  .toLowerCase()
+                  .replace(/-/g, "_");
+                const prKey =
+                  prRaw in priorityColors
+                    ? (prRaw as keyof typeof priorityColors)
+                    : "short_term";
+                const prioClass =
+                  priorityColors[prKey] ?? priorityColors.short_term;
+                const prioLabel = String(rec?.priority ?? "short_term").replace(
+                  /_/g,
+                  " "
+                );
+                return (
+                  <div
+                    key={i}
+                    className={`border rounded-xl p-5 ${prioClass}`}
+                  >
+                    <div className="flex items-start justify-between mb-2 gap-2">
+                      <p className="font-medium text-sm">
+                        {rec?.action ?? "—"}
+                      </p>
+                      <span className="text-xs uppercase font-semibold opacity-70 shrink-0 ml-4">
+                        {prioLabel}
+                      </span>
+                    </div>
+                    <p className="text-sm opacity-70">{rec?.impact ?? "—"}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

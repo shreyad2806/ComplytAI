@@ -49,8 +49,6 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -81,6 +79,8 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
 }
 
 .dark {
@@ -288,6 +288,22 @@ html {
   100% { transform: translateY(0); }
 }
 
+@keyframes ctaGlowPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.12),
+      0 0 20px rgba(34, 211, 238, 0.2),
+      0 0 40px rgba(59, 130, 246, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.22),
+      0 0 28px rgba(34, 211, 238, 0.35),
+      0 0 52px rgba(59, 130, 246, 0.22);
+  }
+}
+
 @layer utilities {
   .animate-fade-up {
     animation: fadeInUp 360ms cubic-bezier(.2,.9,.2,1) both;
@@ -295,6 +311,10 @@ html {
 
   .animate-subtle-pulse {
     animation: subtlePulse 2200ms ease-in-out infinite;
+  }
+
+  .animate-cta-glow-pulse {
+    animation: ctaGlowPulse 2.2s ease-in-out infinite;
   }
 }
 

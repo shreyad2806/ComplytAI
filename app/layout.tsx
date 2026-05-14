@@ -3,12 +3,11 @@ import { Geist, Geist_Mono, Inter } from "next/font/google";
 
 import "./globals.css";
 
+import { Toaster } from "sonner";
+
 import { cn } from "@/lib/utils";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-});
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -72,14 +71,26 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
       className={cn(
-        "h-full antialiased",
-        geistSans.variable,
-        geistMono.variable,
-        inter.variable,
-        "dark font-sans"
-      )}
+              "h-full antialiased",
+              geistSans.variable,
+              geistMono.variable,
+              "dark font-sans"
+            , "font-sans", inter.variable)}
     >
-      <body className="min-h-screen bg-black text-white">{children}</body>
+      <body className="min-h-screen bg-black text-white">
+        {children}
+        <Toaster
+          theme="dark"
+          richColors
+          position="top-center"
+          toastOptions={{
+            classNames: {
+              toast:
+                "bg-slate-900 border border-slate-700/80 text-slate-100 shadow-xl",
+            },
+          }}
+        />
+      </body>
     </html>
   );
 }

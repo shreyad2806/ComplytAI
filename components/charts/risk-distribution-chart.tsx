@@ -2,13 +2,19 @@
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 
-const data = [
-  { name: "Critical", value: 25, color: "#f43f5e" },
-  { name: "High", value: 45, color: "#f59e0b" },
-  { name: "Low", value: 30, color: "#14b8a6" },
+import type { PieDatum } from "@/lib/report-analytics";
+
+const EMPTY: PieDatum[] = [
+  { name: "Critical", value: 1, color: "#f43f5e" },
+  { name: "High", value: 1, color: "#f59e0b" },
+  { name: "Medium", value: 1, color: "#eab308" },
+  { name: "Low", value: 1, color: "#14b8a6" },
 ];
 
-export function RiskDistributionChart() {
+export function RiskDistributionChart({ data }: { data: PieDatum[] }) {
+  const chartData = data?.length ? data : EMPTY;
+  const total = chartData.reduce((a, b) => a + b.value, 0) || 1;
+
   return (
     <article className="rounded-xl border border-white/10 bg-[#071225] p-4">
       <h4 className="mb-3 text-sm font-medium text-zinc-200">Risk Severity Distribution</h4>
@@ -16,8 +22,14 @@ export function RiskDistributionChart() {
         <div className="h-28">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={data} dataKey="value" innerRadius={32} outerRadius={45} paddingAngle={3}>
-                {data.map((entry) => (
+              <Pie
+                data={chartData}
+                dataKey="value"
+                innerRadius={32}
+                outerRadius={45}
+                paddingAngle={3}
+              >
+                {chartData.map((entry) => (
                   <Cell key={entry.name} fill={entry.color} />
                 ))}
               </Pie>
@@ -25,13 +37,15 @@ export function RiskDistributionChart() {
           </ResponsiveContainer>
         </div>
         <ul className="space-y-2">
-          {data.map((item) => (
+          {chartData.map((item) => (
             <li key={item.name} className="flex items-center justify-between text-xs text-zinc-400">
               <span className="flex items-center gap-2">
                 <span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />
                 {item.name} Risk
               </span>
-              {item.value}%
+              <span>
+                {item.value} ({Math.round((item.value / total) * 100)}%)
+              </span>
             </li>
           ))}
         </ul>
