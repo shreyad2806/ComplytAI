@@ -1,203 +1,226 @@
 import type {
   AnalysisResponse,
-  AuditFlag,
   ComplianceIssue,
   ComplianceReport,
+  FinancialRisk,
+  KeyInsight,
   Recommendation,
-  RiskItem,
+  Severity,
 } from "@/types";
 
-/** Persisted snapshot saved to localStorage (stable shape for UI + history). */
-export type PersistedReport = {
+export type PersistedReport = ComplianceReport & {
   id: string;
   createdAt: string;
   fileName?: string;
   prompt: string;
-  analysisType?: string;
-  platform?: string;
-  risk_score: number;
-  risk_level: string;
-  executive_summary: string;
-  key_insights: unknown[];
-  financial_risks: unknown[];
-  compliance_issues: unknown[];
-  audit_flags: unknown[];
-  recommendations: unknown[];
+  platform: string;
 };
 
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
+type UnknownRecord = Record<string, unknown>;
+
+const NOT_FOUND = "Not Found";
+const SEVERITIES: readonly Severity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+function asRecord(value: unknown): UnknownRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
     : {};
 }
 
-function normalizeRiskLevel(input: unknown): ComplianceReport["risk_level"] {
-  if (typeof input !== "string" || !input.trim()) return "Medium";
-  const s = input.trim().toLowerCase();
-  if (s === "low") return "Low";
-  if (s === "medium") return "Medium";
-  if (s === "high") return "High";
-  if (s === "critical") return "Critical";
-  return "Medium";
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function clampScore(input: unknown): number {
-  const n =
-    typeof input === "number"
-      ? input
-      : typeof input === "string"
-        ? Number.parseFloat(input)
-        : Number.NaN;
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(100, Math.max(0, Math.round(n)));
+function firstValue(record: UnknownRecord, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null) return value;
+  }
+
+  const aliases = new Set(keys.map(normalizeKey));
+  for (const [key, value] of Object.entries(record)) {
+    if (aliases.has(normalizeKey(key)) && value !== undefined && value !== null) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
-function normalizeSeverity(input: unknown): RiskItem["severity"] {
-  const s =
-    typeof input === "string" ? input.trim().toLowerCase() : "medium";
-  if (s === "critical" || s === "high" || s === "medium" || s === "low")
-    return s;
-  return "medium";
+function readString(value: unknown, fallback = NOT_FOUND): string {
+  if (typeof value !== "string") return fallback;
+  const text = value.trim();
+  return text ? text : fallback;
 }
 
-function normalizeFinancialRisks(input: unknown): RiskItem[] {
-  if (!Array.isArray(input)) return [];
-  return input.map((item) => {
-    const o = asRecord(item);
+function readScore(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value).replace(/%/g, ""));
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(0, Math.round(parsed))) : 0;
+}
+
+function readSeverity(value: unknown, fallback: Severity = "MEDIUM"): Severity {
+  const normalized = String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (SEVERITIES.includes(normalized as Severity)) return normalized as Severity;
+  if (normalized.includes("CRIT")) return "CRITICAL";
+  if (normalized.includes("HIGH")) return "HIGH";
+  if (normalized.includes("LOW")) return "LOW";
+  if (normalized.includes("MED")) return "MEDIUM";
+  return fallback;
+}
+
+function readArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  const parsed = parseJsonValue(value);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function stripMarkdown(text: string): string {
+  const fenced = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return (fenced?.[1] ?? text).trim();
+}
+
+function repairJson(text: string): string {
+  return stripMarkdown(text)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/,\s*([}\]])/g, "$1");
+}
+
+export function parseJsonValue(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+
+  let value = repairJson(raw);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (typeof parsed !== "string") return parsed;
+      value = repairJson(parsed);
+    } catch {
+      const objectStart = value.indexOf("{");
+      const objectEnd = value.lastIndexOf("}");
+      const arrayStart = value.indexOf("[");
+      const arrayEnd = value.lastIndexOf("]");
+      const hasObject = objectStart >= 0 && objectEnd > objectStart;
+      const hasArray = arrayStart >= 0 && arrayEnd > arrayStart;
+      if (!hasObject && !hasArray) return raw;
+      value = repairJson(
+        hasObject && (!hasArray || objectStart < arrayStart)
+          ? value.slice(objectStart, objectEnd + 1)
+          : value.slice(arrayStart, arrayEnd + 1)
+      );
+    }
+  }
+  return raw;
+}
+
+function unwrapReport(raw: unknown): UnknownRecord {
+  const parsed = parseJsonValue(raw);
+  const first = Array.isArray(parsed) ? parsed[0] : parsed;
+  const root = asRecord(first);
+  const nested = firstValue(root, ["report", "data", "result", "output", "body", "json"]);
+  const parsedNested = parseJsonValue(nested);
+  const report = asRecord(Array.isArray(parsedNested) ? parsedNested[0] : parsedNested);
+  const source = Object.keys(report).length > 0 ? report : root;
+  const embedded = asRecord(parseJsonValue(firstValue(source, ["executive_summary", "summary"])));
+
+  if (Object.keys(embedded).length > 0) {
     return {
-      title: typeof o.title === "string" ? o.title : "Untitled risk",
-      description:
-        typeof o.description === "string" ? o.description : "",
-      severity: normalizeSeverity(o.severity),
-      financial_exposure:
-        typeof o.financial_exposure === "string"
-          ? o.financial_exposure
-          : undefined,
+      ...embedded,
+      ...source,
+      executive_summary: firstValue(embedded, ["executive_summary", "summary"]),
     };
-  });
+  }
+
+  return source;
 }
 
-function normalizeComplianceIssues(input: unknown): ComplianceIssue[] {
-  if (!Array.isArray(input)) return [];
-  return input.map((item) => {
-    const o = asRecord(item);
-    const raw =
-      typeof o.status === "string" ? o.status.trim().toLowerCase() : "";
-    const statusNorm = raw.replace(/-/g, "_");
-    const status: ComplianceIssue["status"] =
-      statusNorm === "open" ||
-      statusNorm === "resolved" ||
-      statusNorm === "in_review"
-        ? (statusNorm as ComplianceIssue["status"])
-        : "open";
-    const pr =
-      typeof o.priority === "string" ? o.priority.trim().toLowerCase() : "";
-    const priority: ComplianceIssue["priority"] =
-      pr === "low" || pr === "medium" || pr === "high" ? pr : "medium";
-    return {
-      issue: typeof o.issue === "string" ? o.issue : "—",
-      regulation:
-        typeof o.regulation === "string" ? o.regulation : undefined,
-      status,
-      priority,
-    };
-  });
-}
-
-function normalizeAuditFlags(input: unknown): AuditFlag[] {
-  if (!Array.isArray(input)) return [];
-  return input.map((item) => {
-    const o = asRecord(item);
-    return {
-      flag: typeof o.flag === "string" ? o.flag : "—",
-      category: typeof o.category === "string" ? o.category : "General",
-      details: typeof o.details === "string" ? o.details : "",
-    };
-  });
-}
-
-function normalizeRecommendations(input: unknown): Recommendation[] {
-  if (!Array.isArray(input)) return [];
-  return input.map((item) => {
-    const o = asRecord(item);
-    const raw =
-      typeof o.priority === "string" ? o.priority.trim().toLowerCase() : "";
-    const pr = raw.replace(/-/g, "_");
-    const priority: Recommendation["priority"] =
-      pr === "immediate" || pr === "short_term" || pr === "long_term"
-        ? pr
-        : "short_term";
-    return {
-      action: typeof o.action === "string" ? o.action : "—",
-      priority,
-      impact: typeof o.impact === "string" ? o.impact : "",
-    };
-  });
-}
-
-function normalizeKeyInsights(input: unknown): string[] {
-  if (!Array.isArray(input)) return [];
-  return input
-    .map((x) => {
-      if (typeof x === "string") return x;
-      if (x && typeof x === "object") return JSON.stringify(x);
-      if (x == null) return "";
-      return String(x);
-    })
-    .filter((s) => s.length > 0);
-}
-
-/** Coerces arbitrary n8n / LLM `report` JSON into a safe {@link ComplianceReport}. */
-export function normalizeReport(raw: unknown): ComplianceReport {
-  const r = asRecord(raw);
-
+function normalizeInsight(item: unknown): KeyInsight | null {
+  const record = typeof item === "string" ? { title: item } : asRecord(item);
+  const title = readString(firstValue(record, ["title", "insight", "name", "text", "issue", "flag"]));
+  if (title === NOT_FOUND) return null;
   return {
-    risk_score: clampScore(r.risk_score),
-    risk_level: normalizeRiskLevel(r.risk_level),
-    executive_summary:
-      typeof r.executive_summary === "string"
-        ? r.executive_summary
-        : typeof r.summary === "string"
-          ? r.summary
-          : "",
-    financial_risks: normalizeFinancialRisks(r.financial_risks),
-    compliance_issues: normalizeComplianceIssues(r.compliance_issues),
-    audit_flags: normalizeAuditFlags(r.audit_flags),
-    recommendations: normalizeRecommendations(r.recommendations),
-    key_insights: normalizeKeyInsights(r.key_insights),
+    title,
+    description: readString(firstValue(record, ["description", "details", "detail", "text", "summary"])),
+    severity: readSeverity(firstValue(record, ["severity", "level", "priority", "status"])),
   };
 }
 
-/** @deprecated Use {@link normalizeReport} — alias kept for existing imports. */
-export const normalizeComplianceReport = normalizeReport;
+function normalizeFinancialRisk(item: unknown): FinancialRisk | null {
+  const insight = normalizeInsight(item);
+  if (!insight) return null;
+  const record = asRecord(item);
+  return {
+    ...insight,
+    business_impact: readString(firstValue(record, ["business_impact", "businessImpact", "impact"])),
+    financial_exposure: readString(firstValue(record, ["financial_exposure", "financialExposure", "exposure"])),
+  };
+}
 
-/**
- * Build a persisted row after a successful `/api/analyse` call.
- */
+function normalizeComplianceIssue(item: unknown): ComplianceIssue | null {
+  const insight = normalizeInsight(item);
+  if (!insight) return null;
+  const record = asRecord(item);
+  return {
+    ...insight,
+    regulation: readString(firstValue(record, ["regulation", "framework", "requirement", "standard"])),
+  };
+}
+
+function normalizeRecommendation(item: unknown): Recommendation | null {
+  const record = typeof item === "string" ? { title: item } : asRecord(item);
+  const title = readString(firstValue(record, ["title", "action", "recommendation", "name"]));
+  if (title === NOT_FOUND) return null;
+  return {
+    title,
+    description: readString(firstValue(record, ["description", "details", "detail"])),
+    priority: readSeverity(firstValue(record, ["priority", "severity", "level"])),
+    timeline: readString(firstValue(record, ["timeline", "due_date", "dueDate", "timeframe"])),
+  };
+}
+
+function normalizeItems<T>(value: unknown, normalizeItem: (item: unknown) => T | null): T[] {
+  return readArray(value)
+    .map(normalizeItem)
+    .filter((item): item is T => item !== null);
+}
+
+export function normalizeReport(raw: unknown): ComplianceReport {
+  const source = unwrapReport(raw);
+
+  return {
+    document_title: readString(firstValue(source, ["document_title", "document_name", "title", "name"])),
+    analysis_type: readString(firstValue(source, ["analysis_type", "analysisType", "type"]), "Compliance Analysis"),
+    risk_score: readScore(firstValue(source, ["risk_score", "overall_risk_score", "riskScore", "score", "score_value"])),
+    risk_level: readSeverity(firstValue(source, ["risk_level", "riskLevel", "level"])),
+    confidence_score: readScore(firstValue(source, ["confidence_score", "confidenceScore", "confidence"])),
+    executive_summary: readString(firstValue(source, ["executive_summary", "executiveSummary", "summary"])),
+    key_insights: normalizeItems(firstValue(source, ["key_insights", "keyInsights", "insights"]), normalizeInsight),
+    financial_risks: normalizeItems(firstValue(source, ["financial_risks", "financialRisks", "financial_risk_items", "risks"]), normalizeFinancialRisk),
+    compliance_issues: normalizeItems(firstValue(source, ["compliance_issues", "complianceIssues", "issues"]), normalizeComplianceIssue),
+    audit_flags: normalizeItems(firstValue(source, ["audit_flags", "auditFlags", "flags"]), normalizeInsight),
+    recommendations: normalizeItems(firstValue(source, ["recommendations", "recommendation", "recs"]), normalizeRecommendation),
+  };
+}
+
+export function isCanonicalReport(report: ComplianceReport): boolean {
+  return report.document_title !== NOT_FOUND && report.executive_summary !== NOT_FOUND;
+}
+
 export function buildPersistedReport(
   response: AnalysisResponse,
   meta: { id: string; prompt: string; fileName?: string }
 ): PersistedReport {
-  const n = normalizeReport(response.report ?? {});
   return {
+    ...normalizeReport(response.report),
     id: meta.id,
     createdAt: new Date().toISOString(),
     fileName: meta.fileName,
     prompt: meta.prompt,
-    analysisType: response.analysis_type,
     platform: response.platform,
-    risk_score: n.risk_score,
-    risk_level: n.risk_level,
-    executive_summary: n.executive_summary,
-    key_insights: n.key_insights,
-    financial_risks: n.financial_risks,
-    compliance_issues: n.compliance_issues,
-    audit_flags: n.audit_flags,
-    recommendations: n.recommendations,
   };
 }
 
-/** Convert persisted row to strict {@link ComplianceReport} for components. */
-export function persistedToComplianceReport(p: PersistedReport): ComplianceReport {
-  return normalizeReport(p);
+export function persistedToComplianceReport(report: PersistedReport): ComplianceReport {
+  return normalizeReport(report);
 }

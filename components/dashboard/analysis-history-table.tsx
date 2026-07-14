@@ -87,12 +87,12 @@ export function AnalysisHistoryTable() {
                   </TableCell>
                   <TableCell className="text-zinc-400">
                     <Link href={`/dashboard/report/${row.id}`} className="block py-3">
-                      {row.analysisType ?? "Compliance"}
+                      {row.analysis_type}
                     </Link>
                   </TableCell>
                   <TableCell className="text-cyan-300">
                     <Link href={`/dashboard/report/${row.id}`} className="block py-3">
-                      {String(row.risk_score ?? "—")}
+                      {String(row.risk_score)}
                     </Link>
                   </TableCell>
                   <TableCell>

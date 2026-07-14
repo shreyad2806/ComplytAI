@@ -5,9 +5,7 @@ import { buildPersistedReport } from "@/lib/normalize-report";
 import { useReportsStore } from "@/store/useReportsStore";
 
 function generateReportId(): string {
-  const year = new Date().getFullYear();
-  const seq = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-  return `RPT-${year}-${seq}`;
+  return `RPT-${crypto.randomUUID()}`;
 }
 
 export const useComplytStore = create<ComplytStore>((set) => ({
@@ -20,8 +18,8 @@ export const useComplytStore = create<ComplytStore>((set) => ({
 
   startAnalysis: async ({ file, prompt }) => {
     const trimmed = prompt.trim();
-    const promptForApi =
-      trimmed || "Perform a full compliance and risk analysis.";
+    const userPrompt = trimmed || "Perform a full compliance and risk analysis.";
+    const promptForApi = `Return exactly one JSON object. Do not use markdown, code fences, commentary, or properties outside this schema. Every property is required. Use [] for unavailable list data and "Not Found" for unavailable strings. Do not invent facts. confidence_score must be an integer from 0 to 100 based on retrieved evidence, document completeness, and response consistency.\n\n{\n  "document_title":"",\n  "analysis_type":"",\n  "risk_score":0,\n  "risk_level":"LOW|MEDIUM|HIGH|CRITICAL",\n  "confidence_score":0,\n  "executive_summary":"",\n  "key_insights":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL"}],\n  "financial_risks":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","business_impact":"","financial_exposure":""}],\n  "compliance_issues":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","regulation":""}],\n  "audit_flags":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL"}],\n  "recommendations":[{"title":"","description":"","priority":"LOW|MEDIUM|HIGH|CRITICAL","timeline":""}]\n}\n\nAnalysis request: ${userPrompt}`;
     const documentName = file?.name ?? "Analysis request (no attachment)";
 
     set({
@@ -36,6 +34,9 @@ export const useComplytStore = create<ComplytStore>((set) => ({
     try {
       set({ analysisProgress: 15 });
       const document_text = file ? await extractTextFromFile(file) : "";
+      if (!document_text.trim()) {
+        throw new Error("The uploaded document could not be read. Upload a text document or configure server-side document extraction.");
+      }
       set({ analysisProgress: 35 });
 
       const response = await analyzeDocument({
@@ -44,6 +45,18 @@ export const useComplytStore = create<ComplytStore>((set) => ({
         document_name: documentName,
       });
 
+      console.info("[copilot] analysis response received", {
+        requestId: response.request_id,
+        analysisType: response.analysis_type,
+        riskScore: response.report.risk_score,
+        sections: {
+          keyInsights: response.report.key_insights.length,
+          financialRisks: response.report.financial_risks.length,
+          complianceIssues: response.report.compliance_issues.length,
+          auditFlags: response.report.audit_flags.length,
+          recommendations: response.report.recommendations.length,
+        },
+      });
       set({ analysisProgress: 75 });
 
       if (!response.success) {
@@ -66,8 +79,12 @@ export const useComplytStore = create<ComplytStore>((set) => ({
         reportId: persisted.id,
       });
     } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : "Unknown error occurred";
+      console.error("[copilot] analysis failed", { message: rawMessage });
       const message =
-        err instanceof Error ? err.message : "Unknown error occurred";
+        /invalid response from analysis service|unexpected payload|invalid json/i.test(rawMessage)
+          ? "Analysis could not be generated."
+          : rawMessage;
       set({
         isAnalyzing: false,
         analysisProgress: null,

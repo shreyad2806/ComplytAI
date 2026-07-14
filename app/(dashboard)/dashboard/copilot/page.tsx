@@ -1,23 +1,31 @@
 // src/app/dashboard/copilot/page.tsx
 "use client";
 
+import { motion } from "framer-motion";
 import { UploadPanel } from "@/components/copilot/uploadPanel";
+import { fadeUp, stagger } from "@/components/shared/motion";
 
 export default function CopilotPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <motion.div
+      initial="hidden"
+      animate="show"
+      variants={stagger}
+      className="mx-auto w-full max-w-[1400px] space-y-8"
+    >
       {/* Header */}
-      <header className="border-b border-slate-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">AI Copilot</h1>
-        <p className="text-slate-400 text-sm mt-0.5">
-          Upload a compliance document to begin AI analysis
+      <motion.section variants={fadeUp}>
+        <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">AI Analysis Workspace</p>
+        <h1 className="mt-2 font-geist text-4xl font-semibold text-zinc-100">AI Copilot</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          Upload compliance documents to generate comprehensive AI-powered analysis, risk assessments, and recommendations
         </p>
-      </header>
+      </motion.section>
 
-      {/* Upload Area */}
-      <main className="px-6 py-12">
+      {/* Upload Panel */}
+      <motion.section variants={fadeUp}>
         <UploadPanel />
-      </main>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }

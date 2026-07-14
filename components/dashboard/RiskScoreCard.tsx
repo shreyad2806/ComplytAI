@@ -7,25 +7,25 @@ interface Props {
 }
 
 const riskColors = {
-  Low: {
+  LOW: {
     bg: "bg-green-500/10",
     border: "border-green-500/30",
     text: "text-green-400",
     ring: "#22c55e",
   },
-  Medium: {
+  MEDIUM: {
     bg: "bg-yellow-500/10",
     border: "border-yellow-500/30",
     text: "text-yellow-400",
     ring: "#eab308",
   },
-  High: {
+  HIGH: {
     bg: "bg-orange-500/10",
     border: "border-orange-500/30",
     text: "text-orange-400",
     ring: "#f97316",
   },
-  Critical: {
+  CRITICAL: {
     bg: "bg-red-500/10",
     border: "border-red-500/30",
     text: "text-red-400",
@@ -34,23 +34,11 @@ const riskColors = {
 } as const;
 
 export function RiskScoreCard({ report }: Props) {
-  const levelRaw = report?.risk_level ?? "Medium";
-  const level =
-    levelRaw in riskColors
-      ? (levelRaw as keyof typeof riskColors)
-      : "Medium";
-  const colors = riskColors[level] ?? riskColors.Medium;
+  const levelRaw = report.risk_level;
+  const level = levelRaw in riskColors ? (levelRaw as keyof typeof riskColors) : "MEDIUM";
+  const colors = riskColors[level] ?? riskColors.MEDIUM;
 
-  const scoreRaw = report?.risk_score;
-  const scoreNum =
-    typeof scoreRaw === "number"
-      ? scoreRaw
-      : typeof scoreRaw === "string"
-        ? Number.parseFloat(scoreRaw)
-        : 0;
-  const score = Number.isFinite(scoreNum)
-    ? Math.min(100, Math.max(0, scoreNum))
-    : 0;
+  const score = Math.min(100, Math.max(0, report.risk_score));
 
   const circumference = 2 * Math.PI * 54;
   const offset = circumference - (score / 100) * circumference;
@@ -98,10 +86,8 @@ export function RiskScoreCard({ report }: Props) {
         </div>
 
         <div>
-          <div
-            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} mb-3`}
-          >
-            {String(levelRaw)} Risk
+          <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} mb-3`}>
+            {String(levelRaw).replace(/_/g, " ")} Risk
           </div>
           <p className="text-slate-300 text-sm leading-relaxed line-clamp-3">
             {summary || "—"}

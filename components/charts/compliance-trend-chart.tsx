@@ -6,7 +6,7 @@ import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { TrendDatum } from "@/lib/report-analytics";
 
 export function ComplianceTrendChart({ data }: { data: TrendDatum[] }) {
-  const chartData = data?.length ? data : [{ month: "—", score: 0 }];
+  const chartData = useMemo(() => data?.length ? data : [{ month: "—", score: 0 }], [data]);
   const domain = useMemo(() => {
     const scores = chartData.map((d) => d.score).filter((n) => Number.isFinite(n));
     if (!scores.length) return [0, 100] as [number, number];

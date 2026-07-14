@@ -1,12 +1,19 @@
 "use client";
 
-import { ArrowRight, Play } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { fadeUp, staggerContainer } from "@/components/landing/motion";
 
 export function Hero() {
+  const router = useRouter();
+
+  const handleGoToDashboard = () => {
+    router.push("/dashboard");
+  };
+
   return (
     <section className="relative overflow-hidden pt-18 sm:pt-24">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(6,182,212,0.14),transparent_45%)]" />
@@ -40,16 +47,12 @@ export function Hero() {
         </motion.p>
 
         <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center gap-3">
-          <Button className="h-10 rounded-md bg-cyan-500 px-5 text-sm font-semibold text-cyan-950 hover:bg-cyan-400">
-            Start Free Trial
-            <ArrowRight className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            className="h-10 rounded-md border-white/20 bg-white/5 px-5 text-sm text-zinc-100 hover:bg-white/10"
+          <Button 
+            onClick={handleGoToDashboard}
+            className="h-10 rounded-md bg-cyan-500 px-5 text-sm font-semibold text-cyan-950 hover:bg-cyan-400"
           >
-            <Play className="size-4" />
-            Watch Platform Demo
+            Go to Dashboard
+            <ArrowRight className="size-4" />
           </Button>
         </motion.div>
       </motion.div>

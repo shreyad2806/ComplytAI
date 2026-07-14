@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AnalysisRequest } from "@/types";
+import { isCanonicalReport, normalizeReport, parseJsonValue } from "@/lib/normalize-report";
 
 /** Used when only `N8N_BASE_URL` is set (e.g. http://localhost:5678) */
 const DEFAULT_WEBHOOK_PATH = "/webhook-test/complyt-ai";
@@ -8,8 +9,6 @@ const ORCHESTRATION_MSG =
 
 const LOG = "[api/analyse]";
 const N8N_TIMEOUT_MS = 120_000;
-/** Max characters of raw body to print in one log line (avoid flooding terminal) */
-const RAW_LOG_MAX = 100_000;
 
 function resolveWebhookUrl(): string | null {
   const explicit = process.env.N8N_WEBHOOK_URL?.trim();
@@ -22,21 +21,6 @@ function resolveWebhookUrl(): string | null {
   }
 
   return null;
-}
-
-function logIncomingBody(body: Partial<AnalysisRequest>) {
-  const doc = body.document_text;
-  const preview =
-    typeof doc === "string"
-      ? doc.length > 400
-        ? `${doc.slice(0, 400)}… (${doc.length} chars)`
-        : doc
-      : doc;
-  console.info(`${LOG} incoming request body`, {
-    prompt: body.prompt,
-    document_name: body.document_name,
-    document_text: preview,
-  });
 }
 
 function isNetworkOrchestrationError(err: unknown): boolean {
@@ -58,43 +42,8 @@ function isNetworkOrchestrationError(err: unknown): boolean {
   return false;
 }
 
-function logRawResponseForTerminal(raw: string, status: number) {
-  console.info(`${LOG} response status`, status);
-  console.info(`${LOG} raw response length (chars)`, raw.length);
-  if (raw.length <= RAW_LOG_MAX) {
-    console.info(`${LOG} raw response text`, raw);
-  } else {
-    console.info(
-      `${LOG} raw response text (head ${RAW_LOG_MAX / 2} chars)`,
-      raw.slice(0, RAW_LOG_MAX / 2)
-    );
-    console.info(
-      `${LOG} raw response text (tail ${RAW_LOG_MAX / 2} chars)`,
-      raw.slice(-RAW_LOG_MAX / 2)
-    );
-    console.info(
-      `${LOG} raw response text [middle omitted; total ${raw.length} chars]`
-    );
-  }
-}
-
-function logParsedJson(data: unknown) {
-  try {
-    const serialized = JSON.stringify(data);
-    const max = 50_000;
-    if (serialized.length <= max) {
-      console.info(`${LOG} parsed JSON`, data);
-    } else {
-      console.info(`${LOG} parsed JSON (stringified length)`, serialized.length);
-      console.info(`${LOG} parsed JSON (preview)`, serialized.slice(0, max) + "…");
-    }
-  } catch (e) {
-    console.info(`${LOG} parsed JSON (could not stringify for log)`, data);
-    console.error(`${LOG} stringify for log failed`, e);
-  }
-}
-
 export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID();
   try {
     let parsedBody: unknown;
     try {
@@ -111,12 +60,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = parsedBody as Partial<AnalysisRequest>;
-    logIncomingBody(body);
 
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const document_text =
       typeof body.document_text === "string" ? body.document_text : "";
     if (!prompt) {
+      console.error(`${LOG} invalid request`, { requestId, code: "MISSING_PROMPT" });
       return NextResponse.json(
         { error: "Missing or empty prompt", code: "MISSING_PROMPT" },
         { status: 400 }
@@ -124,6 +73,12 @@ export async function POST(request: NextRequest) {
     }
 
     const webhookUrl = resolveWebhookUrl();
+    console.info(`${LOG} request accepted`, {
+      requestId,
+      documentName: body.document_name ?? "compliance-request",
+      documentCharacters: document_text.length,
+      webhookConfigured: Boolean(webhookUrl),
+    });
     if (!webhookUrl) {
       console.error(
         `${LOG} missing N8N_WEBHOOK_URL / N8N_BASE_URL — example: N8N_WEBHOOK_URL=http://localhost:5678/webhook-test/complyt-ai`
@@ -138,8 +93,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.info(`${LOG} webhook URL`, webhookUrl);
-
     const outbound = {
       prompt,
       document_text,
@@ -153,6 +106,7 @@ export async function POST(request: NextRequest) {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, text/plain, */*",
+          "X-Complyt-Request-Id": requestId,
         },
         body: JSON.stringify(outbound),
         signal: AbortSignal.timeout(N8N_TIMEOUT_MS),
@@ -177,11 +131,9 @@ export async function POST(request: NextRequest) {
       throw fetchErr;
     }
 
-    // Read body exactly once — never call .json() on this Response
     const raw = await n8nResponse.text();
     const status = n8nResponse.status;
-
-    logRawResponseForTerminal(raw, status);
+    console.info(`${LOG} n8n response received`, { requestId, status, responseCharacters: raw.length });
 
     if (!n8nResponse.ok) {
       console.error(`${LOG} n8n HTTP error`, { status, rawLength: raw.length });
@@ -191,26 +143,16 @@ export async function POST(request: NextRequest) {
           error: "AI workflow returned an error",
           code: "N8N_HTTP_ERROR",
           status,
-          rawResponse: raw,
         },
         { status: 502 }
       );
     }
 
-    let data: unknown;
-    try {
-      data = raw.length ? JSON.parse(raw) : null;
-    } catch (parseErr) {
-      console.error(`${LOG} JSON.parse failed on n8n body`, {
-        error: parseErr,
-        stack: parseErr instanceof Error ? parseErr.stack : undefined,
-      });
+    const data = parseJsonValue(raw);
+    if (typeof data === "string") {
+      console.error(`${LOG} invalid n8n response format`);
       return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid JSON returned from n8n",
-          rawResponse: raw,
-        },
+        { success: false, error: "Invalid JSON returned from n8n", code: "INVALID_N8N_JSON" },
         { status: 502 }
       );
     }
@@ -221,16 +163,46 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Invalid JSON returned from n8n",
-          rawResponse: raw,
+          code: "INVALID_N8N_JSON",
         },
         { status: 502 }
       );
     }
 
-    logParsedJson(data);
-
-    console.info(`${LOG} returning parsed payload to client`);
-    return NextResponse.json(data);
+    try {
+      const normalized = normalizeReport(data);
+      if (!isCanonicalReport(normalized)) {
+        return NextResponse.json(
+          { success: false, error: "AI response did not contain a complete report", code: "INVALID_REPORT" },
+          { status: 502 }
+        );
+      }
+      console.info(`${LOG} report normalized`, {
+        requestId,
+        analysisType: normalized.analysis_type,
+        riskScore: normalized.risk_score,
+        sections: {
+          keyInsights: normalized.key_insights.length,
+          financialRisks: normalized.financial_risks.length,
+          complianceIssues: normalized.compliance_issues.length,
+          auditFlags: normalized.audit_flags.length,
+          recommendations: normalized.recommendations.length,
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        platform: "n8n",
+        analysis_type: normalized.analysis_type,
+        report: normalized,
+        request_id: requestId,
+      });
+    } catch (error) {
+      console.error(`${LOG} normalization failed`, error);
+      return NextResponse.json(
+        { success: false, error: "Invalid report structure returned from AI", code: "INVALID_REPORT" },
+        { status: 502 }
+      );
+    }
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") {
       console.error(`${LOG} timeout`, {

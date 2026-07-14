@@ -10,20 +10,14 @@ export type MetricCardData = {
 
 function avgRiskScore(reports: PersistedReport[]): number {
   if (!reports.length) return 0;
-  const sum = reports.reduce((a, r) => a + (Number(r.risk_score) || 0), 0);
+  const sum = reports.reduce((total, report) => total + report.risk_score, 0);
   return Math.round((sum / reports.length) * 10) / 10;
 }
 
 function totalOpenIssues(reports: PersistedReport[]): number {
   return reports.reduce((acc, r) => {
     const issues = Array.isArray(r.compliance_issues) ? r.compliance_issues : [];
-    const open = issues.filter((it: unknown) => {
-      const s = String(
-        (it as { status?: string })?.status ?? "open"
-      ).toLowerCase();
-      return s === "open" || s.includes("pending");
-    });
-    return acc + open.length;
+    return acc + issues.length;
   }, 0);
 }
 
@@ -54,7 +48,7 @@ export function selectDashboardMetrics(reports: PersistedReport[]): MetricCardDa
   }
 
   const latest = reports[0];
-  const score = Number(latest.risk_score) || 0;
+  const score = latest.risk_score;
   const complianceScore = Math.max(0, Math.min(100, 100 - score));
   const avg = avgRiskScore(reports);
   const flags = totalAuditFlags(reports);
@@ -145,10 +139,10 @@ export function selectRiskTrend(reports: PersistedReport[]): TrendDatum[] {
   if (!sorted.length) {
     return [{ month: "—", score: 0 }];
   }
-  return sorted.map((r) => {
+    return sorted.map((r) => {
     const d = new Date(r.createdAt);
     const month = `${d.getMonth() + 1}/${d.getDate()}`;
-    return { month, score: Number(r.risk_score) || 0 };
+    return { month, score: r.risk_score };
   });
 }
 
@@ -164,8 +158,7 @@ export function selectCategoryCounts(reports: PersistedReport[]): { name: string
     const issues = Array.isArray(r.compliance_issues) ? r.compliance_issues : [];
     const risks = Array.isArray(r.financial_risks) ? r.financial_risks : [];
     for (const it of issues) {
-      const o = it as { issue?: string; regulation?: string };
-      const t = haystack(`${o?.issue ?? ""} ${o?.regulation ?? ""}`);
+      const t = haystack(`${it.title} ${it.description} ${it.regulation}`);
       for (const k of CATEGORY_KEYS) {
         if (t.includes(k)) counts[k] += 1;
       }
@@ -195,18 +188,13 @@ export function selectAuditExposureBars(reports: PersistedReport[]): AuditBar[] 
     ];
   }
   const latest = reports[0];
-  const recs = Array.isArray(latest.recommendations) ? latest.recommendations : [];
-  const immediate = recs.filter(
-    (x: unknown) =>
-      String((x as { priority?: string })?.priority ?? "")
-        .toLowerCase()
-        .includes("immediate")
-  ).length;
+  const recs = latest.recommendations;
+  const immediate = recs.filter((recommendation) => recommendation.priority === "CRITICAL").length;
   const issues = Array.isArray(latest.compliance_issues)
     ? latest.compliance_issues.length
     : 0;
   const flags = Array.isArray(latest.audit_flags) ? latest.audit_flags.length : 0;
-  const score = Number(latest.risk_score) || 0;
+  const score = latest.risk_score;
 
   return [
     {
@@ -266,20 +254,18 @@ export function selectAnalysisCards(reports: PersistedReport[]): AnalysisCardVM[
     .map((x) => x?.title)
     .filter(Boolean)
     .slice(0, 4) as string[];
-  const recs = (Array.isArray(latest.recommendations) ? latest.recommendations : []) as {
-    action?: string;
-  }[];
+  const recs = latest.recommendations;
   const recBullets = recs
-    .map((x) => x?.action)
+    .map((recommendation) => recommendation.title)
     .filter(Boolean)
-    .slice(0, 4) as string[];
+    .slice(0, 4);
 
   return [
     {
       title: "Overall Assessment",
       level: `${latest.risk_level ?? "Unknown"} risk`.toLowerCase(),
       bullets: summaryBullets.length ? summaryBullets : [summary],
-      score: String(latest.risk_score ?? "—"),
+      score: String(latest.risk_score),
     },
     {
       title: "Financial / operational signals",
@@ -329,10 +315,9 @@ export function selectAuditFlagsPanel(reports: PersistedReport[]): AuditFlagVM[]
   for (const r of reports) {
     const flags = Array.isArray(r.audit_flags) ? r.audit_flags : [];
     for (const f of flags) {
-      const o = f as { flag?: string; details?: string; category?: string };
-      const title = o?.flag ?? "Flag";
-      const subtitle = o?.details ?? "";
-      const category = o?.category ?? "";
+      const title = f.title;
+      const subtitle = f.description;
+      const category = f.severity;
       out.push({
         title,
         subtitle: subtitle || category || "—",

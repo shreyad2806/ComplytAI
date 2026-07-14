@@ -7,12 +7,9 @@ import {
   Bot,
   CircleDot,
   FileSearch,
-  Flag,
-  History,
   LayoutGrid,
   Menu,
   Settings,
-  ShieldAlert,
   X,
 } from "lucide-react";
 
@@ -21,16 +18,12 @@ import { useDashboardUI } from "@/store/use-dashboard-ui";
 
 const primaryItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
-  { href: "/dashboard#documents", label: "Document Analysis", icon: FileSearch },
   { href: "/dashboard/copilot", label: "AI Copilot", icon: Bot },
-  { href: "/dashboard#risk", label: "Risk Intelligence", icon: ShieldAlert },
-  { href: "/dashboard/report/RPT-2025-0847", label: "Reports", icon: FileSearch },
+  { href: "/dashboard/reports", label: "Reports", icon: FileSearch },
 ];
 
 const secondaryItems = [
-  { href: "/dashboard#flags", label: "Audit Flags", icon: Flag },
-  { href: "/dashboard#history", label: "History", icon: History },
-  { href: "/dashboard#settings", label: "Settings", icon: Settings },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 function SidebarContent() {
@@ -52,10 +45,10 @@ function SidebarContent() {
         <div className="space-y-1">
           {primaryItems.map((item) => {
             const active =
-              item.href.startsWith("/dashboard/report")
-                ? (pathname?.startsWith("/dashboard/report") ?? false)
-                : item.href.includes("#")
-                  ? pathname === "/dashboard"
+              item.href === "/dashboard"
+                ? pathname === "/dashboard"
+                : item.href.startsWith("/dashboard/reports")
+                  ? (pathname?.startsWith("/dashboard/reports") ?? false)
                   : pathname === item.href;
             return (
               <Link
@@ -75,18 +68,25 @@ function SidebarContent() {
           })}
         </div>
 
-        {!collapsed && <p className="px-2 text-[10px] uppercase tracking-[0.18em] text-zinc-600">Compliance</p>}
         <div className="space-y-1">
-          {secondaryItems.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex items-center gap-3 rounded-md border border-transparent px-3 py-2 text-sm text-zinc-400 transition hover:border-white/10 hover:bg-zinc-900 hover:text-zinc-200"
-            >
-              <item.icon className="size-4" />
-              {!collapsed && item.label}
-            </Link>
-          ))}
+          {secondaryItems.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md border px-3 py-2 text-sm transition",
+                  active
+                    ? "border-cyan-400/35 bg-cyan-500/10 text-cyan-200"
+                    : "border-transparent text-zinc-400 hover:border-white/10 hover:bg-zinc-900 hover:text-zinc-200"
+                )}
+              >
+                <item.icon className="size-4" />
+                {!collapsed && item.label}
+              </Link>
+            );
+          })}
         </div>
       </nav>
 

@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -19,7 +18,6 @@ import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from "@/co
 
 import {
   LucideMenu,
-  LucideUser,
   LucideBell,
   LucideSearch,
   LucideChevronDown,
