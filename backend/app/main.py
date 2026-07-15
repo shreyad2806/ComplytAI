@@ -62,7 +62,7 @@ async def analyse(request: Request) -> AnalysisResponse:
             document_text=document_text,
             prompt=prompt,
         )
-        report, agent_trace = run_compliance_crew(
+        report, agent_trace, crew_metrics = run_compliance_crew(
             document_title=document_title,
             document_text=document_text,
             prompt=prompt,
@@ -83,4 +83,5 @@ async def analyse(request: Request) -> AnalysisResponse:
         report=report,
         request_id=request_id,
         agent_trace=agent_trace,
+        crew_metrics=crew_metrics,
     )

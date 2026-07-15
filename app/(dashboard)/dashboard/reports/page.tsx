@@ -25,7 +25,7 @@ export default function ReportsPage() {
   };
 
   const getRiskLevelLabel = (score?: number) => {
-    if (!score) return "Unknown";
+    if (!score) return null;
     if (score > 70) return "High";
     if (score > 40) return "Medium";
     return "Low";
@@ -77,13 +77,15 @@ export default function ReportsPage() {
                   <tr key={report.id} className="transition hover:bg-zinc-900/30">
                     <td className="px-6 py-4 text-sm font-medium text-zinc-100">{report.document_title}</td>
                     <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${getRiskLevelColor(
-                          report.risk_score
-                        )}`}
-                      >
-                        {getRiskLevelLabel(report.risk_score)}
-                      </span>
+                      {getRiskLevelLabel(report.risk_score) && (
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${getRiskLevelColor(
+                            report.risk_score
+                          )}`}
+                        >
+                          {getRiskLevelLabel(report.risk_score)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-zinc-400">
                       {new Date(report.createdAt).toLocaleDateString(undefined, {

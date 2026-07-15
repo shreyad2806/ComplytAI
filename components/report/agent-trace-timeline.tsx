@@ -1,43 +1,71 @@
-import { CheckCircle2, XCircle } from "lucide-react";
+"use client";
 
-import type { AgentTrace } from "@/types";
+import { useComplytStore } from "@/store/useComplytStore";
+import type { AgentTrace, CrewMetrics } from "@/types";
+import type { MergedReportStats } from "@/lib/report-stats";
+import { isMeaningfulText } from "@/lib/report-stats";
+import { WorkflowGraph } from "./workflow-graph";
+import { Clock, Users, ShieldAlert, FileSearch } from "lucide-react";
 
 type AgentTraceTimelineProps = {
   trace: AgentTrace[];
+  metrics?: CrewMetrics | null;
+  mergedStats?: MergedReportStats;
 };
 
-function formatDuration(seconds: number): string {
-  return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-}
+export function AgentTraceTimeline({ trace, metrics, mergedStats }: AgentTraceTimelineProps) {
+  const { isAnalyzing } = useComplytStore();
 
-export function AgentTraceTimeline({ trace }: AgentTraceTimelineProps) {
-  if (!trace.length) return null;
+  if (!trace.length && !isAnalyzing) return null;
 
   return (
     <section>
-      <h2 className="mb-3 text-lg font-semibold text-white">Agent execution</h2>
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <ol className="space-y-4">
-          {trace.map((entry, index) => {
-            const complete = entry.status.toLowerCase() === "completed";
-            const Icon = complete ? CheckCircle2 : XCircle;
-            return (
-              <li key={`${entry.agent}-${index}`} className="relative flex gap-3">
-                {index < trace.length - 1 ? (
-                  <span className="absolute left-2.5 top-6 h-[calc(100%+0.5rem)] w-px bg-slate-700" aria-hidden />
-                ) : null}
-                <Icon className={`relative z-10 mt-0.5 size-5 shrink-0 ${complete ? "text-cyan-400" : "text-red-400"}`} aria-hidden />
-                <div className="min-w-0 pb-0.5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-sm font-medium text-slate-200">{entry.agent}</p>
-                    <span className="text-xs text-slate-500">{entry.status} · {formatDuration(entry.duration)}</span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-400">{entry.summary}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+      <h2 className="mb-4 text-lg font-semibold text-white">Agent Execution Pipeline</h2>
+      
+      {metrics && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-4 h-4 text-cyan-400" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Runtime</p>
+            </div>
+            <p className="text-xl font-semibold text-white">{metrics.crew_total_duration_seconds}s</p>
+            <p className="text-xs text-slate-500 mt-1">Avg {metrics.average_agent_duration_seconds}s per agent</p>
+          </div>
+          
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="w-4 h-4 text-purple-400" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Agent Speeds</p>
+            </div>
+            <p className="text-[13px] text-slate-300">Fastest: <span className="font-medium text-white">{isMeaningfulText(metrics.fastest_agent) ? metrics.fastest_agent : "—"}</span></p>
+            <p className="text-[13px] text-slate-300 mt-1">Slowest: <span className="font-medium text-white">{isMeaningfulText(metrics.slowest_agent) ? metrics.slowest_agent : "—"}</span></p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldAlert className="w-4 h-4 text-red-400" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Findings</p>
+            </div>
+            <p className="text-xl font-semibold text-white">{metrics.total_findings}</p>
+            <p className="text-xs text-slate-500 mt-1">Across all specializations</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FileSearch className="w-4 h-4 text-blue-400" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Evidence Collected</p>
+            </div>
+            <p className="text-xl font-semibold text-white">{metrics.total_evidence}</p>
+            <p className="text-xs text-slate-500 mt-1">Grounded excerpts</p>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-2 sm:p-6 overflow-x-auto flex justify-center">
+        <div className="min-w-[600px] w-full">
+           <WorkflowGraph trace={trace} isAnalyzing={isAnalyzing} mergedStats={mergedStats} />
+        </div>
       </div>
     </section>
   );

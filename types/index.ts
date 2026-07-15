@@ -59,10 +59,25 @@ export interface ComplianceReport {
 
 export type AgentTrace = {
   agent: string;
+  task?: string;
   status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
   duration: number;
+  duration_seconds?: number;
+  evidence_count?: number;
+  findings_count?: number;
   summary: string;
 };
+
+export interface CrewMetrics {
+  crew_total_duration_seconds: number;
+  average_agent_duration_seconds: number;
+  slowest_agent: string;
+  fastest_agent: string;
+  total_findings: number;
+  total_evidence: number;
+}
 
 export type RiskItem = FinancialRisk;
 
@@ -73,6 +88,7 @@ export interface AnalysisResponse {
   report: ComplianceReport;
   request_id?: string;
   agent_trace?: AgentTrace[];
+  crew_metrics?: CrewMetrics | null;
 }
 
 export interface AnalysisRequest {

@@ -67,12 +67,27 @@ class ComplianceReport(BaseModel):
     recommendations: list[Recommendation] = Field(default_factory=list)
 
 
+class CrewMetrics(BaseModel):
+    crew_total_duration_seconds: float = Field(ge=0)
+    average_agent_duration_seconds: float = Field(ge=0)
+    slowest_agent: str
+    fastest_agent: str
+    total_findings: int = Field(ge=0)
+    total_evidence: int = Field(ge=0)
+
+
 class AgentTrace(BaseModel):
     """Execution metadata for one CrewAI agent task; durations are measured in seconds."""
 
     agent: str
+    task: str = ""
     status: str
+    started_at: str | None = None
+    finished_at: str | None = None
     duration: float = Field(ge=0)
+    duration_seconds: float = Field(default=0.0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    findings_count: int = Field(default=0, ge=0)
     summary: str
 
 
@@ -83,3 +98,4 @@ class AnalysisResponse(BaseModel):
     report: ComplianceReport
     request_id: str
     agent_trace: list[AgentTrace] = Field(default_factory=list)
+    crew_metrics: CrewMetrics | None = None

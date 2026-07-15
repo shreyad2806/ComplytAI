@@ -263,7 +263,7 @@ export function selectAnalysisCards(reports: PersistedReport[]): AnalysisCardVM[
   return [
     {
       title: "Overall Assessment",
-      level: `${latest.risk_level ?? "Unknown"} risk`.toLowerCase(),
+      level: latest.risk_level ? `${latest.risk_level} risk`.toLowerCase() : "risk assessment",
       bullets: summaryBullets.length ? summaryBullets : [summary],
       score: String(latest.risk_score),
     },

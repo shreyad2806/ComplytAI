@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCanonicalReport, normalizeReport, parseJsonValue } from "@/lib/normalize-report";
-import type { AgentTrace } from "@/types";
+import type { AgentTrace, CrewMetrics } from "@/types";
 
 /** Used when only `N8N_BASE_URL` is set (e.g. http://localhost:5678) */
 const DEFAULT_WEBHOOK_PATH = "/webhook-test/complyt-ai";
@@ -59,8 +59,32 @@ function readAgentTrace(value: unknown): AgentTrace[] {
     const duration = typeof entry.duration === "number" ? entry.duration : Number(entry.duration);
     const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
     if (!agent || !status || !Number.isFinite(duration) || !summary) return [];
-    return [{ agent, status, duration: Math.max(0, duration), summary }];
+    
+    return [{ 
+      agent, 
+      status, 
+      duration: Math.max(0, duration), 
+      summary,
+      task: typeof entry.task === "string" ? entry.task : undefined,
+      started_at: typeof entry.started_at === "string" ? entry.started_at : undefined,
+      finished_at: typeof entry.finished_at === "string" ? entry.finished_at : undefined,
+      duration_seconds: typeof entry.duration_seconds === "number" ? entry.duration_seconds : undefined,
+      evidence_count: typeof entry.evidence_count === "number" ? entry.evidence_count : undefined,
+      findings_count: typeof entry.findings_count === "number" ? entry.findings_count : undefined,
+    }];
   });
+}
+
+function readCrewMetrics(value: unknown): CrewMetrics | null {
+  const root = Array.isArray(value) ? value[0] : value;
+  if (!root || typeof root !== "object") return null;
+
+  const record = root as Record<string, unknown>;
+  const nested = record.report && typeof record.report === "object" ? record.report as Record<string, unknown> : null;
+  const metrics = record.crew_metrics ?? nested?.crew_metrics;
+  
+  if (!metrics || typeof metrics !== "object") return null;
+  return metrics as CrewMetrics;
 }
 
 export async function POST(request: NextRequest) {
@@ -205,6 +229,7 @@ export async function POST(request: NextRequest) {
     try {
       const normalized = normalizeReport(data);
       const agentTrace = readAgentTrace(data);
+      const crewMetrics = readCrewMetrics(data);
       if (!isCanonicalReport(normalized)) {
         return NextResponse.json(
           { success: false, error: "AI response did not contain a complete report", code: "INVALID_REPORT" },
@@ -230,6 +255,7 @@ export async function POST(request: NextRequest) {
         report: normalized,
         request_id: requestId,
         ...(agentTrace.length ? { agent_trace: agentTrace } : {}),
+        ...(crewMetrics ? { crew_metrics: crewMetrics } : {}),
       });
     } catch (error) {
       console.error(`${LOG} normalization failed`, error);

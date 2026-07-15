@@ -18,6 +18,7 @@ export type PersistedReport = ComplianceReport & {
   prompt: string;
   platform: string;
   agent_trace?: AgentTrace[];
+  crew_metrics?: any;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -276,6 +277,7 @@ export function buildPersistedReport(
     prompt: meta.prompt,
     platform: response.platform,
     ...(response.agent_trace?.length ? { agent_trace: response.agent_trace } : {}),
+    ...(response.crew_metrics ? { crew_metrics: response.crew_metrics } : {}),
   };
 }
 

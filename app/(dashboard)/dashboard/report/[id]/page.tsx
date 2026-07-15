@@ -8,10 +8,10 @@ import { useReportsStore } from "@/store/useReportsStore";
 
 import { FindingConfidence } from "@/components/dashboard/FindingConfidence";
 import { FindingEvidenceAccordion } from "@/components/dashboard/FindingEvidenceAccordion";
-import { FindingSourceExcerpts } from "@/components/dashboard/FindingSourceExcerpts";
 import { RiskScoreCard } from "@/components/dashboard/RiskScoreCard";
 import { AgentTraceTimeline } from "@/components/report/agent-trace-timeline";
 import { persistedToComplianceReport } from "@/lib/normalize-report";
+import { computeMergedReportStats, isMeaningfulText } from "@/lib/report-stats";
 
 import {
   AlertTriangle,
@@ -38,9 +38,7 @@ const severityIconColors = {
 } as const;
 
 function hasRenderableText(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  const normalized = value.trim().toLowerCase();
-  return normalized.length > 0 && !["not found", "unknown", "n/a", "—"].includes(normalized);
+  return isMeaningfulText(value);
 }
 
 function auditFlagIcon(severity: string) {
@@ -130,6 +128,11 @@ export default function ReportPage() {
     if (!persisted) return null;
     return persistedToComplianceReport(persisted);
   }, [persisted]);
+
+  const mergedStats = useMemo(() => {
+    if (!normalizedReport) return undefined;
+    return computeMergedReportStats(normalizedReport, persisted?.agent_trace ?? []);
+  }, [normalizedReport, persisted?.agent_trace]);
 
   // First render is identical on server/client
   if (!hydrated) {
@@ -226,7 +229,11 @@ export default function ReportPage() {
 
         <RiskScoreCard report={r} />
 
-        <AgentTraceTimeline trace={persisted.agent_trace ?? []} />
+        <AgentTraceTimeline 
+          trace={persisted.agent_trace ?? []} 
+          metrics={persisted.crew_metrics} 
+          mergedStats={mergedStats}
+        />
 
         {hasRenderableText(r.executive_summary) && (
           <section>
@@ -264,12 +271,12 @@ export default function ReportPage() {
                       </span>
                     )}
                   </div>
-                  <FindingSourceExcerpts excerpts={insight.source_excerpts} />
                   <FindingEvidenceAccordion
-                    matchedDocumentText=""
+                    matchedDocumentText={insight.matched_document_text}
                     matchedRegulation={insight.matched_regulation}
                     selectionReason={insight.selection_reason}
                     retrievedContext={insight.retrieved_context}
+                    excerpts={insight.source_excerpts}
                   />
                 </div>
               ))}
@@ -311,13 +318,13 @@ export default function ReportPage() {
                     {hasRenderableText(risk.regulation) && (
                       <p className="text-blue-400 text-xs mt-2">{risk.regulation}</p>
                     )}
-                    <FindingSourceExcerpts excerpts={risk.source_excerpts} />
                     <FindingConfidence value={risk.confidence_score} />
                     <FindingEvidenceAccordion
-                      matchedDocumentText=""
+                      matchedDocumentText={risk.matched_document_text}
                       matchedRegulation={risk.matched_regulation}
                       selectionReason={risk.selection_reason}
                       retrievedContext={risk.retrieved_context}
+                      excerpts={risk.source_excerpts}
                     />
                   </div>
                 );
@@ -353,13 +360,13 @@ export default function ReportPage() {
                   {hasRenderableText(issue.regulation) && (
                     <p className="text-blue-400 text-xs">{issue.regulation}</p>
                   )}
-                  <FindingSourceExcerpts excerpts={issue.source_excerpts} />
                   <FindingConfidence value={issue.confidence_score} />
                   <FindingEvidenceAccordion
-                    matchedDocumentText=""
+                    matchedDocumentText={issue.matched_document_text}
                     matchedRegulation={issue.matched_regulation}
                     selectionReason={issue.selection_reason}
                     retrievedContext={issue.retrieved_context}
+                    excerpts={issue.source_excerpts}
                   />
                 </div>
               ))}
@@ -403,13 +410,13 @@ export default function ReportPage() {
                         )}
                       </div>
                     </div>
-                    <FindingSourceExcerpts excerpts={flag.source_excerpts} />
                     <FindingConfidence value={flag.confidence_score} />
                     <FindingEvidenceAccordion
-                      matchedDocumentText=""
+                      matchedDocumentText={flag.matched_document_text}
                       matchedRegulation={flag.matched_regulation}
                       selectionReason={flag.selection_reason}
                       retrievedContext={flag.retrieved_context}
+                      excerpts={flag.source_excerpts}
                     />
                   </div>
                 );
@@ -443,12 +450,12 @@ export default function ReportPage() {
                   {hasRenderableText(rec.timeline) && (
                     <p className="mt-2 text-xs text-cyan-400">{rec.timeline}</p>
                   )}
-                  <FindingSourceExcerpts excerpts={rec.source_excerpts} />
                   <FindingEvidenceAccordion
-                    matchedDocumentText=""
+                    matchedDocumentText={rec.matched_document_text}
                     matchedRegulation={rec.matched_regulation}
                     selectionReason={rec.selection_reason}
                     retrievedContext={rec.retrieved_context}
+                    excerpts={rec.source_excerpts}
                   />
                 </div>
               ))}
