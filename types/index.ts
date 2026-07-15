@@ -57,6 +57,13 @@ export interface ComplianceReport {
   recommendations: Recommendation[];
 }
 
+export type AgentTrace = {
+  agent: string;
+  status: string;
+  duration: number;
+  summary: string;
+};
+
 export type RiskItem = FinancialRisk;
 
 export interface AnalysisResponse {
@@ -65,6 +72,7 @@ export interface AnalysisResponse {
   analysis_type: string;
   report: ComplianceReport;
   request_id?: string;
+  agent_trace?: AgentTrace[];
 }
 
 export interface AnalysisRequest {

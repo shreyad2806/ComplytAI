@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCanonicalReport, normalizeReport, parseJsonValue } from "@/lib/normalize-report";
+import type { AgentTrace } from "@/types";
 
 /** Used when only `N8N_BASE_URL` is set (e.g. http://localhost:5678) */
 const DEFAULT_WEBHOOK_PATH = "/webhook-test/complyt-ai";
@@ -39,6 +40,27 @@ function isNetworkOrchestrationError(err: unknown): boolean {
     return true;
 
   return false;
+}
+
+function readAgentTrace(value: unknown): AgentTrace[] {
+  const root = Array.isArray(value) ? value[0] : value;
+  if (!root || typeof root !== "object") return [];
+
+  const record = root as Record<string, unknown>;
+  const nested = record.report && typeof record.report === "object" ? record.report as Record<string, unknown> : null;
+  const trace = record.agent_trace ?? nested?.agent_trace;
+  if (!Array.isArray(trace)) return [];
+
+  return trace.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const entry = item as Record<string, unknown>;
+    const agent = typeof entry.agent === "string" ? entry.agent.trim() : "";
+    const status = typeof entry.status === "string" ? entry.status.trim() : "";
+    const duration = typeof entry.duration === "number" ? entry.duration : Number(entry.duration);
+    const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
+    if (!agent || !status || !Number.isFinite(duration) || !summary) return [];
+    return [{ agent, status, duration: Math.max(0, duration), summary }];
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -159,7 +181,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const data = parseJsonValue(raw);
+      const data = parseJsonValue(raw);
     if (typeof data === "string") {
       console.error(`${LOG} invalid n8n response format`);
       return NextResponse.json(
@@ -182,6 +204,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const normalized = normalizeReport(data);
+      const agentTrace = readAgentTrace(data);
       if (!isCanonicalReport(normalized)) {
         return NextResponse.json(
           { success: false, error: "AI response did not contain a complete report", code: "INVALID_REPORT" },
@@ -206,6 +229,7 @@ export async function POST(request: NextRequest) {
         analysis_type: normalized.analysis_type,
         report: normalized,
         request_id: requestId,
+        ...(agentTrace.length ? { agent_trace: agentTrace } : {}),
       });
     } catch (error) {
       console.error(`${LOG} normalization failed`, error);

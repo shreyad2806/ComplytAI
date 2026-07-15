@@ -10,6 +10,7 @@ import { FindingConfidence } from "@/components/dashboard/FindingConfidence";
 import { FindingEvidenceAccordion } from "@/components/dashboard/FindingEvidenceAccordion";
 import { FindingSourceExcerpts } from "@/components/dashboard/FindingSourceExcerpts";
 import { RiskScoreCard } from "@/components/dashboard/RiskScoreCard";
+import { AgentTraceTimeline } from "@/components/report/agent-trace-timeline";
 import { persistedToComplianceReport } from "@/lib/normalize-report";
 
 import {
@@ -224,6 +225,8 @@ export default function ReportPage() {
         {/* Debug output removed — never display raw JSON in the UI. */}
 
         <RiskScoreCard report={r} />
+
+        <AgentTraceTimeline trace={persisted.agent_trace ?? []} />
 
         {hasRenderableText(r.executive_summary) && (
           <section>

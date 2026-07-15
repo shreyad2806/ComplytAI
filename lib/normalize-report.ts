@@ -1,5 +1,6 @@
 import type {
   AnalysisResponse,
+  AgentTrace,
   AuditFlag,
   ComplianceIssue,
   ComplianceReport,
@@ -16,6 +17,7 @@ export type PersistedReport = ComplianceReport & {
   fileName?: string;
   prompt: string;
   platform: string;
+  agent_trace?: AgentTrace[];
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -273,6 +275,7 @@ export function buildPersistedReport(
     fileName: meta.fileName,
     prompt: meta.prompt,
     platform: response.platform,
+    ...(response.agent_trace?.length ? { agent_trace: response.agent_trace } : {}),
   };
 }
 
