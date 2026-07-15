@@ -1,11 +1,13 @@
 import type {
   AnalysisResponse,
+  AuditFlag,
   ComplianceIssue,
   ComplianceReport,
   FinancialRisk,
   KeyInsight,
   Recommendation,
   Severity,
+  SourceExcerpt,
 } from "@/types";
 
 export type PersistedReport = ComplianceReport & {
@@ -56,6 +58,12 @@ function readString(value: unknown, fallback = NOT_FOUND): string {
 function readScore(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value).replace(/%/g, ""));
   return Number.isFinite(parsed) ? Math.min(100, Math.max(0, Math.round(parsed))) : 0;
+}
+
+function readOptionalScore(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value).replace(/%/g, ""));
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(0, Math.round(parsed))) : undefined;
 }
 
 function readSeverity(value: unknown, fallback: Severity = "MEDIUM"): Severity {
@@ -135,6 +143,39 @@ function unwrapReport(raw: unknown): UnknownRecord {
   return source;
 }
 
+function normalizeSourceExcerpts(record: UnknownRecord): SourceExcerpt[] {
+  const excerpts = readArray(firstValue(record, ["source_excerpts", "sourceExcerpts", "document_excerpts", "documentExcerpts", "matched_excerpts", "matchedExcerpts"]));
+  const normalized = excerpts
+    .map((excerpt) => {
+      const source = typeof excerpt === "string" ? { text: excerpt } : asRecord(excerpt);
+      const text = readString(firstValue(source, ["text", "excerpt", "content", "matched_document_text", "matchedText"]));
+      if (text === NOT_FOUND) return null;
+      const pageNumber = firstValue(source, ["page_number", "pageNumber", "page"]);
+      return {
+        text,
+        ...(pageNumber === undefined || pageNumber === null || pageNumber === ""
+          ? {}
+          : { page_number: String(pageNumber) }),
+      };
+    })
+    .filter((excerpt): excerpt is SourceExcerpt => excerpt !== null);
+
+  if (normalized.length) return normalized;
+
+  const matchedDocumentText = readString(firstValue(record, ["matched_document_text", "matchedDocumentText", "evidence", "matched_text", "matchedText"]));
+  return matchedDocumentText === NOT_FOUND ? [] : [{ text: matchedDocumentText }];
+}
+
+function normalizeEvidence(record: UnknownRecord) {
+  return {
+    matched_document_text: readString(firstValue(record, ["matched_document_text", "matchedDocumentText", "evidence", "matched_text", "matchedText"])),
+    matched_regulation: readString(firstValue(record, ["matched_regulation", "matchedRegulation", "regulation", "framework", "requirement"])),
+    selection_reason: readString(firstValue(record, ["selection_reason", "selectionReason", "reason", "rationale", "ai_reason"])),
+    retrieved_context: readString(firstValue(record, ["retrieved_context", "retrievedContext", "context", "rag_context", "source_context"])),
+    source_excerpts: normalizeSourceExcerpts(record),
+  };
+}
+
 function normalizeInsight(item: unknown): KeyInsight | null {
   const record = typeof item === "string" ? { title: item } : asRecord(item);
   const title = readString(firstValue(record, ["title", "insight", "name", "text", "issue", "flag"]));
@@ -143,6 +184,18 @@ function normalizeInsight(item: unknown): KeyInsight | null {
     title,
     description: readString(firstValue(record, ["description", "details", "detail", "text", "summary"])),
     severity: readSeverity(firstValue(record, ["severity", "level", "priority", "status"])),
+    confidence_score: readOptionalScore(firstValue(record, ["confidence_score", "confidenceScore", "confidence", "model_confidence"])),
+    ...normalizeEvidence(record),
+  };
+}
+
+function normalizeAuditFlag(item: unknown): AuditFlag | null {
+  const insight = normalizeInsight(item);
+  if (!insight) return null;
+  const record = asRecord(item);
+  return {
+    ...insight,
+    control: readString(firstValue(record, ["control", "relevant_control", "relevantControl", "framework", "requirement"])),
   };
 }
 
@@ -154,6 +207,7 @@ function normalizeFinancialRisk(item: unknown): FinancialRisk | null {
     ...insight,
     business_impact: readString(firstValue(record, ["business_impact", "businessImpact", "impact"])),
     financial_exposure: readString(firstValue(record, ["financial_exposure", "financialExposure", "exposure"])),
+    regulation: readString(firstValue(record, ["regulation", "framework", "requirement", "standard"])),
   };
 }
 
@@ -176,6 +230,7 @@ function normalizeRecommendation(item: unknown): Recommendation | null {
     description: readString(firstValue(record, ["description", "details", "detail"])),
     priority: readSeverity(firstValue(record, ["priority", "severity", "level"])),
     timeline: readString(firstValue(record, ["timeline", "due_date", "dueDate", "timeframe"])),
+    ...normalizeEvidence(record),
   };
 }
 
@@ -198,7 +253,7 @@ export function normalizeReport(raw: unknown): ComplianceReport {
     key_insights: normalizeItems(firstValue(source, ["key_insights", "keyInsights", "insights"]), normalizeInsight),
     financial_risks: normalizeItems(firstValue(source, ["financial_risks", "financialRisks", "financial_risk_items", "risks"]), normalizeFinancialRisk),
     compliance_issues: normalizeItems(firstValue(source, ["compliance_issues", "complianceIssues", "issues"]), normalizeComplianceIssue),
-    audit_flags: normalizeItems(firstValue(source, ["audit_flags", "auditFlags", "flags"]), normalizeInsight),
+    audit_flags: normalizeItems(firstValue(source, ["audit_flags", "auditFlags", "flags"]), normalizeAuditFlag),
     recommendations: normalizeItems(firstValue(source, ["recommendations", "recommendation", "recs"]), normalizeRecommendation),
   };
 }

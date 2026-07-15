@@ -2,24 +2,41 @@
 
 export type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
-export type KeyInsight = {
+export type SourceExcerpt = {
+  text: string;
+  page_number?: string;
+};
+
+export type FindingEvidence = {
+  matched_document_text: string;
+  matched_regulation: string;
+  selection_reason: string;
+  retrieved_context: string;
+  source_excerpts: SourceExcerpt[];
+};
+
+export type KeyInsight = FindingEvidence & {
   title: string;
   description: string;
   severity: Severity;
+  confidence_score?: number;
 };
 
 export type FinancialRisk = KeyInsight & {
   business_impact: string;
   financial_exposure: string;
+  regulation: string;
 };
 
 export type ComplianceIssue = KeyInsight & {
   regulation: string;
 };
 
-export type AuditFlag = KeyInsight;
+export type AuditFlag = KeyInsight & {
+  control: string;
+};
 
-export type Recommendation = {
+export type Recommendation = FindingEvidence & {
   title: string;
   description: string;
   priority: Severity;
@@ -51,8 +68,8 @@ export interface AnalysisResponse {
 }
 
 export interface AnalysisRequest {
+  file: File;
   prompt: string;
-  document_text: string;
   document_name: string;
 }
 

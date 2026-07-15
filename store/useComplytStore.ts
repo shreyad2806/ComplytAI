@@ -19,8 +19,8 @@ export const useComplytStore = create<ComplytStore>((set) => ({
   startAnalysis: async ({ file, prompt }) => {
     const trimmed = prompt.trim();
     const userPrompt = trimmed || "Perform a full compliance and risk analysis.";
-    const promptForApi = `Return exactly one JSON object. Do not use markdown, code fences, commentary, or properties outside this schema. Every property is required. Use [] for unavailable list data and "Not Found" for unavailable strings. Do not invent facts. confidence_score must be an integer from 0 to 100 based on retrieved evidence, document completeness, and response consistency.\n\n{\n  "document_title":"",\n  "analysis_type":"",\n  "risk_score":0,\n  "risk_level":"LOW|MEDIUM|HIGH|CRITICAL",\n  "confidence_score":0,\n  "executive_summary":"",\n  "key_insights":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL"}],\n  "financial_risks":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","business_impact":"","financial_exposure":""}],\n  "compliance_issues":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","regulation":""}],\n  "audit_flags":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL"}],\n  "recommendations":[{"title":"","description":"","priority":"LOW|MEDIUM|HIGH|CRITICAL","timeline":""}]\n}\n\nAnalysis request: ${userPrompt}`;
-    const documentName = file?.name ?? "Analysis request (no attachment)";
+    const promptForApi = `Return exactly one JSON object. Do not use markdown, code fences, commentary, or properties outside this schema. Every property is required. Use [] for unavailable list data and "Not Found" for unavailable strings. Do not invent facts. confidence_score must be an integer from 0 to 100 based on retrieved evidence, document completeness, and response consistency.\n\n{\n  "document_title":"",\n  "analysis_type":"",\n  "risk_score":0,\n  "risk_level":"LOW|MEDIUM|HIGH|CRITICAL",\n  "confidence_score":0,\n  "executive_summary":"",\n  "key_insights":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","matched_document_text":"","matched_regulation":"","selection_reason":"","retrieved_context":"","source_excerpts":[{"text":"","page_number":""}]}],\n  "financial_risks":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","business_impact":"","financial_exposure":"","regulation":"","confidence_score":null,"matched_document_text":"","matched_regulation":"","selection_reason":"","retrieved_context":"","source_excerpts":[{"text":"","page_number":""}]}],\n  "compliance_issues":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","regulation":"","confidence_score":null,"matched_document_text":"","matched_regulation":"","selection_reason":"","retrieved_context":"","source_excerpts":[{"text":"","page_number":""}]}],\n  "audit_flags":[{"title":"","description":"","severity":"LOW|MEDIUM|HIGH|CRITICAL","control":"","confidence_score":null,"matched_document_text":"","matched_regulation":"","selection_reason":"","retrieved_context":"","source_excerpts":[{"text":"","page_number":""}]}],\n  "recommendations":[{"title":"","description":"","priority":"LOW|MEDIUM|HIGH|CRITICAL","timeline":"","matched_document_text":"","matched_regulation":"","selection_reason":"","retrieved_context":"","source_excerpts":[{"text":"","page_number":""}]}]\n}\n\nAnalysis request: ${userPrompt}`;
+    const documentName = file?.name ?? "";
 
     set({
       isAnalyzing: true,
@@ -33,15 +33,14 @@ export const useComplytStore = create<ComplytStore>((set) => ({
 
     try {
       set({ analysisProgress: 15 });
-      const document_text = file ? await extractTextFromFile(file) : "";
-      if (!document_text.trim()) {
-        throw new Error("The uploaded document could not be read. Upload a text document or configure server-side document extraction.");
+      if (!file) {
+        throw new Error("Please upload a document before starting analysis.");
       }
       set({ analysisProgress: 35 });
 
       const response = await analyzeDocument({
+        file,
         prompt: promptForApi,
-        document_text,
         document_name: documentName,
       });
 
@@ -106,15 +105,3 @@ export const useComplytStore = create<ComplytStore>((set) => ({
 
   setError: (error) => set({ error }),
 }));
-
-async function extractTextFromFile(file: File): Promise<string> {
-  if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-    return await file.text();
-  }
-
-  if (file.type === "application/pdf") {
-    return await file.text();
-  }
-
-  return await file.text();
-}

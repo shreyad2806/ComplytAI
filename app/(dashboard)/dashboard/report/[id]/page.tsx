@@ -1,14 +1,21 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+
 import { useComplytStore } from "@/store/useComplytStore";
 import { useReportsStore } from "@/store/useReportsStore";
-import { useRouter, useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+
+import { FindingConfidence } from "@/components/dashboard/FindingConfidence";
+import { FindingEvidenceAccordion } from "@/components/dashboard/FindingEvidenceAccordion";
+import { FindingSourceExcerpts } from "@/components/dashboard/FindingSourceExcerpts";
 import { RiskScoreCard } from "@/components/dashboard/RiskScoreCard";
 import { persistedToComplianceReport } from "@/lib/normalize-report";
+
 import {
   AlertTriangle,
   ShieldCheck,
+  ShieldAlert,
   Flag,
   Lightbulb,
   TrendingUp,
@@ -22,46 +29,112 @@ const severityColors = {
   low: "bg-green-500 text-black",
 } as const;
 
+const severityIconColors = {
+  critical: "text-red-400",
+  high: "text-orange-400",
+  medium: "text-yellow-400",
+  low: "text-green-400",
+} as const;
+
+function hasRenderableText(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && !["not found", "unknown", "n/a", "—"].includes(normalized);
+}
+
+function auditFlagIcon(severity: string) {
+  switch (severity.toUpperCase()) {
+    case "CRITICAL":
+      return AlertTriangle;
+    case "HIGH":
+      return ShieldAlert;
+    case "MEDIUM":
+      return Flag;
+    default:
+      return ShieldCheck;
+  }
+}
+
 function complianceStatusClass(status: string): string {
   const s = status.toLowerCase().replace(/-/g, "_");
-  if (s === "open")
+
+  if (s === "open") {
     return "text-red-400 bg-red-500/10 border-red-500/30";
-  if (s === "in_review")
+  }
+
+  if (s === "in_review") {
     return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
+  }
+
   return "text-green-400 bg-green-500/10 border-green-500/30";
 }
 
-function useReportsHydrated(): boolean {
-  const [ok, setOk] = useState(() => useReportsStore.persist?.hasHydrated?.() ?? true);
+/**
+ * Wait until Zustand persistence has hydrated.
+ * This prevents SSR/CSR HTML mismatches.
+ */
+function useReportsHydrated() {
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
-    const unsub = useReportsStore.persist?.onFinishHydration?.(() => {
-      setOk(true);
-    });
+    const persist = useReportsStore.persist;
+    const markHydrated = () => {
+      queueMicrotask(() => setHydrated(true));
+    };
+
+    if (!persist) {
+      markHydrated();
+      return;
+    }
+
+    if (persist.hasHydrated()) {
+      markHydrated();
+      return;
+    }
+
+    const unsub = persist.onFinishHydration(markHydrated);
+
     return () => {
-      if (typeof unsub === "function") unsub();
+      if (typeof unsub === "function") {
+        unsub();
+      }
     };
   }, []);
-  return ok;
+
+  return hydrated;
 }
 
 export default function ReportPage() {
-  const params = useParams();
-  const id = typeof params?.id === "string" ? params.id : params?.id?.[0];
-  const hydrated = useReportsHydrated();
-  const persisted = useReportsStore((s) => (id ? s.getReport(id) : undefined));
-  const { clearReport } = useComplytStore();
   const router = useRouter();
+  const params = useParams();
 
-  const normalizedReport = useMemo(
-    () => (persisted ? persistedToComplianceReport(persisted) : null),
-    [persisted]
-  );
+  const id =
+    typeof params?.id === "string"
+      ? params.id
+      : Array.isArray(params?.id)
+      ? params.id[0]
+      : undefined;
 
+  const hydrated = useReportsHydrated();
 
+  // Only access persisted store AFTER hydration
+  const persisted = useReportsStore((state) => {
+    if (!hydrated || !id) return undefined;
+    return state.getReport(id);
+  });
+
+  const { clearReport } = useComplytStore();
+
+  const normalizedReport = useMemo(() => {
+    if (!persisted) return null;
+    return persistedToComplianceReport(persisted);
+  }, [persisted]);
+
+  // First render is identical on server/client
   if (!hydrated) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        Loading report…
+        Loading report...
       </div>
     );
   }
@@ -70,14 +143,18 @@ export default function ReportPage() {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center max-w-md px-4">
-          <p className="text-slate-400 mb-4">Report not found.</p>
+          <p className="text-slate-400 mb-4">
+            Report not found.
+          </p>
+
           <p className="text-slate-500 text-sm mb-6">
             This analysis may have been removed or never saved in this browser.
           </p>
+
           <button
             type="button"
             onClick={() => router.push("/dashboard/copilot")}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+            className="px-4 py-2 bg-blue-600 rounded-lg text-white text-sm"
           >
             Go to AI Copilot
           </button>
@@ -87,11 +164,29 @@ export default function ReportPage() {
   }
 
   const r = normalizedReport;
-  const financialRisks = r?.financial_risks ?? [];
-  const complianceIssues = r?.compliance_issues ?? [];
-  const auditFlags = r?.audit_flags ?? [];
-  const recommendations = r?.recommendations ?? [];
-  const keyInsights = r?.key_insights ?? [];
+  const financialRisks = r.financial_risks.filter(
+    (risk) => hasRenderableText(risk.title) || hasRenderableText(risk.description)
+  );
+  const complianceIssues = r.compliance_issues.filter(
+    (issue) => hasRenderableText(issue.title) || hasRenderableText(issue.description)
+  );
+  const auditFlags = r.audit_flags.filter(
+    (flag) => hasRenderableText(flag.title) || hasRenderableText(flag.description)
+  );
+  const recommendations = r.recommendations.filter(
+    (recommendation) =>
+      hasRenderableText(recommendation.title) ||
+      hasRenderableText(recommendation.description)
+  );
+  const keyInsights = r.key_insights.filter(
+    (insight) =>
+      hasRenderableText(insight.title) || hasRenderableText(insight.description)
+  );
+  const reportSource = hasRenderableText(persisted.fileName)
+    ? persisted.fileName
+    : hasRenderableText(persisted.prompt)
+      ? persisted.prompt.slice(0, 80)
+      : null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -111,9 +206,9 @@ export default function ReportPage() {
           <div className="w-px h-4 bg-slate-700" />
           <div>
             <h1 className="font-semibold text-white">Compliance Report</h1>
-            <p className="text-slate-500 text-xs">
-              {persisted.fileName ?? persisted.prompt?.slice(0, 80) ?? "—"}
-            </p>
+            {reportSource && (
+              <p className="text-slate-500 text-xs">{reportSource}</p>
+            )}
           </div>
         </div>
         <button
@@ -130,22 +225,17 @@ export default function ReportPage() {
 
         <RiskScoreCard report={r} />
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-500">AI Confidence</p>
-          <p className="mt-1 text-2xl font-semibold text-cyan-300">{r.confidence_score}%</p>
-        </section>
-
-        <section>
-          <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-400" />
-            Executive Summary
-          </h2>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <p className="text-slate-300 leading-relaxed">
-              {r?.executive_summary ?? "—"}
-            </p>
-          </div>
-        </section>
+        {hasRenderableText(r.executive_summary) && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-400" />
+              Executive Summary
+            </h2>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <p className="text-slate-300 leading-relaxed">{r.executive_summary}</p>
+            </div>
+          </section>
+        )}
 
         {keyInsights.length > 0 && (
           <section>
@@ -158,13 +248,26 @@ export default function ReportPage() {
                 <div key={`${insight.title.slice(0, 40)}-${i}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                   <div className="flex items-start justify-between mb-2 gap-2">
                     <div className="flex-1 pr-4">
-                      <h3 className="font-medium text-white">{insight.title}</h3>
-                      <p className="mt-1 text-sm text-slate-400">{insight.description}</p>
+                      {hasRenderableText(insight.title) && (
+                        <h3 className="font-medium text-white">{insight.title}</h3>
+                      )}
+                      {hasRenderableText(insight.description) && (
+                        <p className="mt-1 text-sm text-slate-400">{insight.description}</p>
+                      )}
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${complianceStatusClass(insight.severity)}`}>
-                      {insight.severity}
-                    </span>
+                    {hasRenderableText(insight.severity) && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${complianceStatusClass(insight.severity)}`}>
+                        {insight.severity}
+                      </span>
+                    )}
                   </div>
+                  <FindingSourceExcerpts excerpts={insight.source_excerpts} />
+                  <FindingEvidenceAccordion
+                    matchedDocumentText=""
+                    matchedRegulation={insight.matched_regulation}
+                    selectionReason={insight.selection_reason}
+                    retrievedContext={insight.retrieved_context}
+                  />
                 </div>
               ))}
             </div>
@@ -179,19 +282,40 @@ export default function ReportPage() {
             </h2>
             <div className="grid gap-3">
               {financialRisks.map((risk, i) => {
-                const sevClass = severityColors[String(risk?.severity ?? "").toLowerCase() as keyof typeof severityColors] ?? "bg-yellow-500 text-black";
+                const sevClass = severityColors[risk.severity.toLowerCase() as keyof typeof severityColors] ?? "bg-yellow-500 text-black";
+                const estimatedImpact = hasRenderableText(risk.financial_exposure)
+                  ? risk.financial_exposure
+                  : risk.business_impact;
+
                 return (
-                  <div key={`${String(risk?.title ?? "untitled").slice(0, 40)}-${i}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                  <div key={`${risk.title.slice(0, 40)}-${i}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                     <div className="flex items-start justify-between mb-2 gap-2">
-                      <h3 className="font-medium text-white">{risk?.title ?? "—"}</h3>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${sevClass}`}>
-                        {String(risk?.severity ?? "unknown").toUpperCase()}
-                      </span>
+                      {hasRenderableText(risk.title) && (
+                        <h3 className="font-medium text-white">{risk.title}</h3>
+                      )}
+                      {hasRenderableText(risk.severity) && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${sevClass}`}>
+                          {risk.severity.toUpperCase()}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-slate-400 text-sm">{risk?.description ?? "—"}</p>
-                    {risk?.financial_exposure != null && String(risk.financial_exposure).length > 0 && (
-                      <p className="text-orange-400 text-sm mt-2 font-medium">Exposure: {String(risk.financial_exposure)}</p>
+                    {hasRenderableText(risk.description) && (
+                      <p className="text-slate-400 text-sm">{risk.description}</p>
                     )}
+                    {hasRenderableText(estimatedImpact) && (
+                      <p className="text-orange-400 text-sm mt-2 font-medium">Estimated Impact: {estimatedImpact}</p>
+                    )}
+                    {hasRenderableText(risk.regulation) && (
+                      <p className="text-blue-400 text-xs mt-2">{risk.regulation}</p>
+                    )}
+                    <FindingSourceExcerpts excerpts={risk.source_excerpts} />
+                    <FindingConfidence value={risk.confidence_score} />
+                    <FindingEvidenceAccordion
+                      matchedDocumentText=""
+                      matchedRegulation={risk.matched_regulation}
+                      selectionReason={risk.selection_reason}
+                      retrievedContext={risk.retrieved_context}
+                    />
                   </div>
                 );
               })}
@@ -210,14 +334,30 @@ export default function ReportPage() {
                 <div key={`${issue.title.slice(0, 40)}-${i}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                   <div className="flex items-start justify-between mb-2 gap-2">
                     <div className="flex-1 pr-4">
-                      <h3 className="font-medium text-white">{issue.title}</h3>
-                      <p className="mt-1 text-sm text-slate-400">{issue.description}</p>
+                      {hasRenderableText(issue.title) && (
+                        <h3 className="font-medium text-white">{issue.title}</h3>
+                      )}
+                      {hasRenderableText(issue.description) && (
+                        <p className="mt-1 text-sm text-slate-400">{issue.description}</p>
+                      )}
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${complianceStatusClass(issue.severity)}`}>
-                      {issue.severity}
-                    </span>
+                    {hasRenderableText(issue.severity) && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${complianceStatusClass(issue.severity)}`}>
+                        {issue.severity}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-blue-400 text-xs">{issue.regulation}</p>
+                  {hasRenderableText(issue.regulation) && (
+                    <p className="text-blue-400 text-xs">{issue.regulation}</p>
+                  )}
+                  <FindingSourceExcerpts excerpts={issue.source_excerpts} />
+                  <FindingConfidence value={issue.confidence_score} />
+                  <FindingEvidenceAccordion
+                    matchedDocumentText=""
+                    matchedRegulation={issue.matched_regulation}
+                    selectionReason={issue.selection_reason}
+                    retrievedContext={issue.retrieved_context}
+                  />
                 </div>
               ))}
             </div>
@@ -231,14 +371,46 @@ export default function ReportPage() {
               Audit Flags ({auditFlags.length})
             </h2>
             <div className="space-y-3">
-              {auditFlags.map((flag, i) => (
-                <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium text-white">{flag?.title ?? "—"}</h3>
-                    <span className="text-xs uppercase font-semibold opacity-70">{String(flag?.severity ?? "").replace(/_/g, " ")}</span>
+              {auditFlags.map((flag, i) => {
+                const severityKey = flag.severity.toLowerCase() as keyof typeof severityColors;
+                const AuditIcon = auditFlagIcon(flag.severity);
+                const severityClass = severityColors[severityKey] ?? severityColors.low;
+                const iconClass = severityIconColors[severityKey] ?? severityIconColors.low;
+
+                return (
+                  <div key={`${flag.title.slice(0, 40)}-${i}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                    <div className="flex items-start gap-3">
+                      <AuditIcon className={`w-5 h-5 shrink-0 mt-0.5 ${iconClass}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          {hasRenderableText(flag.title) && (
+                            <h3 className="font-medium text-white">{flag.title}</h3>
+                          )}
+                          {hasRenderableText(flag.severity) && (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${severityClass}`}>
+                              {flag.severity}
+                            </span>
+                          )}
+                        </div>
+                        {hasRenderableText(flag.description) && (
+                          <p className="mt-1 text-slate-400 text-sm">{flag.description}</p>
+                        )}
+                        {hasRenderableText(flag.control) && (
+                          <p className="mt-2 text-blue-400 text-xs">Relevant Control: {flag.control}</p>
+                        )}
+                      </div>
+                    </div>
+                    <FindingSourceExcerpts excerpts={flag.source_excerpts} />
+                    <FindingConfidence value={flag.confidence_score} />
+                    <FindingEvidenceAccordion
+                      matchedDocumentText=""
+                      matchedRegulation={flag.matched_regulation}
+                      selectionReason={flag.selection_reason}
+                      retrievedContext={flag.retrieved_context}
+                    />
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -254,12 +426,27 @@ export default function ReportPage() {
                 <div key={`${rec.title.slice(0, 40)}-${i}`} className="border rounded-xl p-5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="font-medium text-sm">{rec.title}</h3>
-                      <p className="mt-1 text-sm text-slate-400">{rec.description}</p>
+                      {hasRenderableText(rec.title) && (
+                        <h3 className="font-medium text-sm">{rec.title}</h3>
+                      )}
+                      {hasRenderableText(rec.description) && (
+                        <p className="mt-1 text-sm text-slate-400">{rec.description}</p>
+                      )}
                     </div>
-                    <span className="text-xs text-slate-400">{rec.priority}</span>
+                    {hasRenderableText(rec.priority) && (
+                      <span className="text-xs text-slate-400">{rec.priority}</span>
+                    )}
                   </div>
-                  <p className="mt-2 text-xs text-cyan-400">{rec.timeline}</p>
+                  {hasRenderableText(rec.timeline) && (
+                    <p className="mt-2 text-xs text-cyan-400">{rec.timeline}</p>
+                  )}
+                  <FindingSourceExcerpts excerpts={rec.source_excerpts} />
+                  <FindingEvidenceAccordion
+                    matchedDocumentText=""
+                    matchedRegulation={rec.matched_regulation}
+                    selectionReason={rec.selection_reason}
+                    retrievedContext={rec.retrieved_context}
+                  />
                 </div>
               ))}
             </div>

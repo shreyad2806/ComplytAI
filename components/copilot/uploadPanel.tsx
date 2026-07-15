@@ -42,10 +42,8 @@ export function UploadPanel() {
 
   const handleRunAnalysis = async () => {
     const trimmed = prompt.trim();
-    if (!stagedFile && !trimmed) {
-      toast.error(
-        "Please upload a document or enter an analysis request."
-      );
+    if (!stagedFile) {
+      toast.error("Please upload a document before starting analysis.");
       return;
     }
 

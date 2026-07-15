@@ -26,13 +26,17 @@ function parseApiErrorPayload(text: string): {
 export async function analyzeDocument(
   request: AnalysisRequest
 ): Promise<AnalysisResponse> {
+  const formData = new FormData();
+  formData.append("file", request.file, request.file.name);
+  formData.append("prompt", request.prompt);
+  formData.append("document_name", request.document_name);
+
   const response = await fetch(`${API_BASE}/analyse`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify(request),
+    body: formData,
   });
 
   const errorText = await response.text();

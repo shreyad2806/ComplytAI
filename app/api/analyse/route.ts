@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AnalysisRequest } from "@/types";
 import { isCanonicalReport, normalizeReport, parseJsonValue } from "@/lib/normalize-report";
 
 /** Used when only `N8N_BASE_URL` is set (e.g. http://localhost:5678) */
@@ -45,25 +44,29 @@ function isNetworkOrchestrationError(err: unknown): boolean {
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID();
   try {
-    let parsedBody: unknown;
+    let formData: FormData;
     try {
-      parsedBody = await request.json();
+      formData = await request.formData();
     } catch (parseErr) {
-      console.error(`${LOG} invalid JSON from client`, {
+      console.error(`${LOG} invalid multipart body`, {
         error: parseErr,
         stack: parseErr instanceof Error ? parseErr.stack : undefined,
       });
       return NextResponse.json(
-        { error: "Invalid JSON body", code: "INVALID_JSON" },
+        { error: "Invalid multipart body", code: "INVALID_MULTIPART" },
         { status: 400 }
       );
     }
 
-    const body = parsedBody as Partial<AnalysisRequest>;
+    const promptValue = formData.get("prompt");
+    const documentNameValue = formData.get("document_name");
+    const fileValue = formData.get("file");
+    const prompt = typeof promptValue === "string" ? promptValue.trim() : "";
+    const documentName =
+      typeof documentNameValue === "string" && documentNameValue.trim()
+        ? documentNameValue.trim()
+        : "compliance-request";
 
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-    const document_text =
-      typeof body.document_text === "string" ? body.document_text : "";
     if (!prompt) {
       console.error(`${LOG} invalid request`, { requestId, code: "MISSING_PROMPT" });
       return NextResponse.json(
@@ -72,11 +75,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!(fileValue instanceof File) || fileValue.size === 0) {
+      console.error(`${LOG} invalid request`, { requestId, code: "MISSING_FILE" });
+      return NextResponse.json(
+        { error: "Missing or empty document file", code: "MISSING_FILE" },
+        { status: 400 }
+      );
+    }
+
     const webhookUrl = resolveWebhookUrl();
     console.info(`${LOG} request accepted`, {
       requestId,
-      documentName: body.document_name ?? "compliance-request",
-      documentCharacters: document_text.length,
+      documentName,
+      fileName: fileValue.name,
+      fileSize: fileValue.size,
+      fileType: fileValue.type || "application/octet-stream",
       webhookConfigured: Boolean(webhookUrl),
     });
     if (!webhookUrl) {
@@ -93,22 +106,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const outbound = {
-      prompt,
-      document_text,
-      document_name: body.document_name ?? "compliance-request",
-    };
+    const outbound = new FormData();
+    outbound.append("file", fileValue, fileValue.name);
+    outbound.append("prompt", prompt);
+    outbound.append("document_name", documentName);
 
     let n8nResponse: Response;
     try {
       n8nResponse = await fetch(webhookUrl, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Accept: "application/json, text/plain, */*",
           "X-Complyt-Request-Id": requestId,
         },
-        body: JSON.stringify(outbound),
+        body: outbound,
         signal: AbortSignal.timeout(N8N_TIMEOUT_MS),
       });
     } catch (fetchErr) {
