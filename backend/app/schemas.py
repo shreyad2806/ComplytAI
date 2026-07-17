@@ -68,6 +68,21 @@ class ComplianceReport(BaseModel):
     recommendations: list[Recommendation] = Field(default_factory=list)
 
 
+class FailedCheck(BaseModel):
+    check: str
+    description: str
+    affected_items: list[str] = Field(default_factory=list)
+
+
+class GuardrailResult(BaseModel):
+    passed: bool
+    failed_checks: list[FailedCheck] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    retry_required: bool = False
+    improvement_instructions: str = ""
+    report: ComplianceReport | None = None
+
+
 class CrewMetrics(BaseModel):
     crew_total_duration_seconds: float = Field(ge=0)
     average_agent_duration_seconds: float = Field(ge=0)
