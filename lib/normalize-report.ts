@@ -183,11 +183,13 @@ function normalizeInsight(item: unknown): KeyInsight | null {
   const record = typeof item === "string" ? { title: item } : asRecord(item);
   const title = readString(firstValue(record, ["title", "insight", "name", "text", "issue", "flag"]));
   if (title === NOT_FOUND) return null;
+  const confidenceReason = readString(firstValue(record, ["confidence_reason", "confidenceReason", "reason_for_confidence"]), "");
   return {
     title,
     description: readString(firstValue(record, ["description", "details", "detail", "text", "summary"])),
     severity: readSeverity(firstValue(record, ["severity", "level", "priority", "status"])),
     confidence_score: readOptionalScore(firstValue(record, ["confidence_score", "confidenceScore", "confidence", "model_confidence"])),
+    ...(confidenceReason ? { confidence_reason: confidenceReason } : {}),
     ...normalizeEvidence(record),
   };
 }

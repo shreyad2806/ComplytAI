@@ -149,11 +149,8 @@ export async function POST(request: NextRequest) {
       }
       throw fetchErr;
     }
-    console.log("STATUS:", backendResponse.status);
-    console.log("OK:", backendResponse.ok);
 
     const raw = await backendResponse.text();
-    console.log(raw.substring(0, 500)); 
 
     const status = backendResponse.status;
     console.info(`${LOG} n8n response received requestId=${requestId} status=${status} responseCharacters=${raw.length}`);

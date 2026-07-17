@@ -28,6 +28,7 @@ class KeyInsight(FindingEvidence):
     description: str
     severity: Severity
     confidence_score: int | None = Field(default=None, ge=0, le=100)
+    confidence_reason: str | None = Field(default=None, description="Explanation of why this confidence score was assigned, based on evidence quantity, clarity, retrieval quality, and consistency.")
 
 
 class FinancialRisk(KeyInsight):

@@ -62,7 +62,7 @@ function ManagerSummary({ stats }: { stats: MergedReportStats }) {
 function AgentSummary({ trace }: { trace: AgentTrace }) {
   if (!isMeaningfulText(trace.summary)) return null;
 
-  if (trace.agent.includes("Compliance Review")) {
+  if (trace.agent.includes("Manager")) {
     return null;
   }
 
@@ -94,7 +94,7 @@ export function WorkflowCard({
   const Icon = complete ? CheckCircle2 : XCircle;
   const colorClass = getAgentColor(trace.agent);
   const iconColor = getAgentIconColor(trace.agent);
-  const isManager = trace.agent.includes("Compliance Review");
+  const isManager = trace.agent.includes("Manager");
 
   const formatTime = (isoString?: string | null) => {
     if (!isoString) return "--:--:--";

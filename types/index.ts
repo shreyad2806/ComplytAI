@@ -20,6 +20,7 @@ export type KeyInsight = FindingEvidence & {
   description: string;
   severity: Severity;
   confidence_score?: number;
+  confidence_reason?: string;
 };
 
 export type FinancialRisk = KeyInsight & {
