@@ -83,6 +83,23 @@ class GuardrailResult(BaseModel):
     report: ComplianceReport | None = None
 
 
+class ReflectionResult(BaseModel):
+    report: ComplianceReport
+    changes_made: list[str] = Field(default_factory=list, description="List of specific improvements applied")
+    reflection_notes: str = Field(default="", description="Summary of reflection process")
+
+
+class ReportEvaluation(BaseModel):
+    """Quality evaluation of the final ComplianceReport."""
+    grounding_score: int = Field(ge=0, le=100, description="How well findings are supported by source document evidence")
+    completeness: int = Field(ge=0, le=100, description="How thoroughly the report covers all relevant compliance aspects")
+    hallucination_risk: int = Field(ge=0, le=100, description="Risk level of fabricated or unsupported claims (lower is better)")
+    evidence_coverage: int = Field(ge=0, le=100, description="Percentage of findings with adequate supporting evidence")
+    recommendation_quality: int = Field(ge=0, le=100, description="How well recommendations align with findings and are actionable")
+    overall_quality: int = Field(ge=0, le=100, description="Overall report quality score")
+    summary: str = Field(default="", description="Brief evaluation summary")
+
+
 class CrewMetrics(BaseModel):
     crew_total_duration_seconds: float = Field(ge=0)
     average_agent_duration_seconds: float = Field(ge=0)
@@ -115,3 +132,4 @@ class AnalysisResponse(BaseModel):
     request_id: str
     agent_trace: list[AgentTrace] = Field(default_factory=list)
     crew_metrics: CrewMetrics | None = None
+    evaluation: ReportEvaluation | None = Field(default=None, description="Quality evaluation of the report")

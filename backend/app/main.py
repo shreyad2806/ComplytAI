@@ -7,7 +7,7 @@ from .config import get_settings
 from .crew import run_compliance_crew
 from .documents import DocumentExtractionError, extract_text
 from .memory import PineconeReportMemory, retrieve_related_reports, store_report
-from .schemas import AnalysisResponse, GuardrailResult
+from .schemas import AnalysisResponse, GuardrailResult, ReportEvaluation
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ async def analyse(request: Request) -> AnalysisResponse:
             document_text=document_text,
             prompt=prompt,
         )
-        report, agent_trace, crew_metrics, guardrail = await run_compliance_crew(
+        report, agent_trace, crew_metrics, guardrail, evaluation = await run_compliance_crew(
             document_title=document_title,
             document_text=document_text,
             prompt=prompt,
@@ -102,6 +102,7 @@ async def analyse(request: Request) -> AnalysisResponse:
     request_id=request_id,
     agent_trace=agent_trace,
     crew_metrics=crew_metrics,
+    evaluation=evaluation,
 )
 
     print("=" * 80)

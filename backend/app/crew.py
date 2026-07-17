@@ -4,7 +4,7 @@ from datetime import datetime
 from crewai import Agent, Crew, LLM, Process, Task
 
 from .config import Settings
-from .schemas import AgentTrace, ComplianceReport, CrewMetrics, GuardrailResult
+from .schemas import AgentTrace, ComplianceReport, CrewMetrics, GuardrailResult, ReflectionResult, ReportEvaluation
 from .agent_outputs import (
     DocumentAnalysis,
     AMLAnalysis,
@@ -108,6 +108,45 @@ Core principles:
 You are skeptical, precise, and mechanical. You never invent facts, rewrite findings, or fix the report. If the report is correct, you pass it through unchanged. If any check fails, you describe exactly what is wrong so the Manager can correct it.
 
 You treat every check as binary: either it passes or it does not. There is no partial credit. Warnings are reserved for issues that are not blockers but should be noted.""",
+        llm=llm,
+        allow_delegation=False,
+        verbose=False,
+    )
+
+    reflection_agent = Agent(
+        role="Reflection Agent",
+        goal="Improve the ComplianceReport based on Guardrail feedback by refining wording, removing duplicates, and strengthening the executive summary.",
+        backstory="""You are a report refinement specialist. You receive a ComplianceReport and optional Guardrail feedback, then improve the report quality without inventing new evidence or findings.
+
+Your responsibilities:
+- Apply the Guardrail's improvement_instructions if validation failed.
+- Remove duplicate findings and merge overlapping content.
+- Strengthen the executive summary to be concise (max 180 words) and executive-focused.
+- Improve wording clarity and professionalism throughout.
+- Remove unsupported claims that lack evidence.
+- Never invent new facts, evidence, or findings.
+- Preserve all existing valid evidence and findings.
+
+If the Guardrail passed (no failures), perform a final quality pass to polish the report.""",
+        llm=llm,
+        allow_delegation=False,
+        verbose=False,
+    )
+
+    evaluation_agent = Agent(
+        role="Evaluation Agent",
+        goal="Evaluate the final ComplianceReport quality across multiple dimensions and provide structured scoring.",
+        backstory="""You are a quality assessment specialist. You evaluate compliance reports against the source document and provide objective quality scores.
+
+Your role is to assess:
+- Grounding: How well findings are supported by actual source document evidence
+- Completeness: How thoroughly the report covers relevant compliance aspects
+- Hallucination Risk: Likelihood of fabricated or unsupported claims
+- Evidence Coverage: Percentage of findings with adequate supporting evidence
+- Recommendation Quality: How well recommendations align with findings and are actionable
+- Overall Quality: Comprehensive assessment of report quality
+
+You provide numerical scores (0-100) for each dimension and a brief summary. You do not modify the report — you only evaluate it.""",
         llm=llm,
         allow_delegation=False,
         verbose=False,
@@ -295,11 +334,111 @@ OUTPUT RULES:
         output_pydantic=GuardrailResult,
     )
 
+    reflection_task = Task(
+        description=f"""Refine the ComplianceReport based on Guardrail feedback and perform a final quality pass.
+
+You will receive:
+1. The original ComplianceReport from the Manager
+2. The GuardrailResult with validation feedback
+
+Your responsibilities:
+
+IF GUARDRAIL FAILED (passed=false):
+- Read the improvement_instructions carefully
+- Apply each instruction to fix the identified issues
+- Remove duplicate findings by merging them into comprehensive findings
+- Strengthen the executive summary to be max 180 words with: Overview, Overall Risk, Top 3 Findings, Business Impact, Immediate Next Steps
+- Remove any unsupported claims that lack evidence
+- Improve wording clarity and professionalism
+- Ensure every recommendation maps to a finding
+
+IF GUARDRAIL PASSED (passed=true):
+- Perform a final quality polish
+- Remove any remaining duplicates or overlaps
+- Ensure executive summary is concise and executive-focused (max 180 words)
+- Improve wording where possible without changing meaning
+- Verify all evidence is properly linked
+
+CRITICAL RULES:
+- NEVER invent new facts, evidence, or findings
+- NEVER change risk_score or risk_level unless explicitly instructed by guardrail
+- Preserve all valid evidence and findings
+- Return a complete, valid ComplianceReport JSON
+- List all changes made in the changes_made array
+- Provide a brief summary in reflection_notes
+
+Source document for reference:
+{document_context}
+""",
+        expected_output="A ReflectionResult containing the improved ComplianceReport, list of changes made, and reflection notes.",
+        agent=reflection_agent,
+        context=[report_task, guardrail_task],
+        output_pydantic=ReflectionResult,
+    )
+
+    evaluation_task = Task(
+        description=f"""Evaluate the quality of the final ComplianceReport against the source document.
+
+You will receive:
+1. The refined ComplianceReport from the Reflection Agent
+2. The original source document
+
+Score each dimension from 0 to 100:
+
+1. GROUNDING SCORE (0-100)
+   How well are findings supported by actual source document evidence?
+   - 90-100: All findings have direct quotes or close paraphrases from source
+   - 70-89: Most findings well-supported, minor gaps
+   - 50-69: Some findings lack strong evidence
+   - Below 50: Many findings unsupported
+
+2. COMPLETENESS (0-100)
+   How thoroughly does the report cover relevant compliance aspects?
+   - 90-100: Comprehensive coverage of all major compliance areas
+   - 70-89: Good coverage with minor omissions
+   - 50-69: Moderate coverage, some gaps
+   - Below 50: Significant gaps in coverage
+
+3. HALLUCINATION RISK (0-100, lower is better)
+   How likely are there fabricated or unsupported claims?
+   - 0-10: Very low risk, all claims well-supported
+   - 11-30: Low risk, minor concerns
+   - 31-50: Moderate risk, some unsupported claims
+   - Above 50: High risk of hallucination
+
+4. EVIDENCE COVERAGE (0-100)
+   What percentage of findings have adequate supporting evidence?
+   - 90-100: Nearly all findings have strong evidence
+   - 70-89: Most findings well-evidenced
+   - 50-69: Some findings lack evidence
+   - Below 50: Many findings unsupported
+
+5. RECOMMENDATION QUALITY (0-100)
+   How well do recommendations align with findings and are actionable?
+   - 90-100: All recommendations directly address findings, specific, actionable
+   - 70-89: Most recommendations well-aligned
+   - 50-69: Some recommendations generic or misaligned
+   - Below 50: Poor alignment or non-actionable
+
+6. OVERALL QUALITY (0-100)
+   Comprehensive assessment considering all dimensions above.
+
+Provide a brief summary (2-3 sentences) highlighting strengths and weaknesses.
+
+Source document for reference:
+{document_context}
+""",
+        expected_output="A ReportEvaluation JSON with scores for each dimension and a summary.",
+        agent=evaluation_agent,
+        context=[reflection_task],
+        output_pydantic=ReportEvaluation,
+    )
+
     print("CREW OBJECT CREATED")
 
     return Crew(
-        agents=[document_analyst, aml_specialist, compliance_officer, risk_auditor, manager, compliance_guardrail],
-        tasks=[document_task, aml_task, compliance_task, audit_task, report_task, guardrail_task],
+        agents=[document_analyst, aml_specialist, compliance_officer, risk_auditor, manager, compliance_guardrail, reflection_agent, evaluation_agent],
+        tasks=[document_task, aml_task, compliance_task, audit_task, report_task, guardrail_task, reflection_task, evaluation_task],
         process=Process.sequential,
         verbose=True,
     )
@@ -426,7 +565,7 @@ async def run_compliance_crew(
     prompt: str,
     related_reports: list[str],
     settings: Settings,
-) -> tuple[ComplianceReport, list[AgentTrace], CrewMetrics, GuardrailResult | None]:
+) -> tuple[ComplianceReport, list[AgentTrace], CrewMetrics, GuardrailResult | None, ReportEvaluation | None]:
 
     crew = build_compliance_crew(
         document_title=document_title,
@@ -467,26 +606,54 @@ async def run_compliance_crew(
 
     print("=" * 80)
 
-    # The last task is the guardrail; extract its result first.
-    guardrail_task = crew.tasks[-1]
-    guardrail_result: GuardrailResult | None = None
-    if guardrail_task.output is not None:
-        if getattr(guardrail_task.output, "pydantic", None) is not None:
-            guardrail_result = guardrail_task.output.pydantic
-        elif hasattr(guardrail_task.output, "raw"):
+    # The last task is the evaluation; extract its result first.
+    evaluation_task_obj = crew.tasks[-1]
+    evaluation_result: ReportEvaluation | None = None
+    if evaluation_task_obj.output is not None:
+        if getattr(evaluation_task_obj.output, "pydantic", None) is not None:
+            evaluation_result = evaluation_task_obj.output.pydantic
+        elif hasattr(evaluation_task_obj.output, "raw"):
             try:
-                guardrail_result = GuardrailResult.model_validate_json(guardrail_task.output.raw)
+                evaluation_result = ReportEvaluation.model_validate_json(evaluation_task_obj.output.raw)
             except Exception:
                 pass
 
-    # Extract the report from the report_task (second-to-last task).
-    report_task_obj = crew.tasks[-2]
-    if getattr(report_task_obj.output, "pydantic", None) is not None:
-        report = report_task_obj.output.pydantic
+    # Extract the reflection result from the second-to-last task.
+    reflection_task_obj = crew.tasks[-2]
+    reflection_result: ReflectionResult | None = None
+    if reflection_task_obj.output is not None:
+        if getattr(reflection_task_obj.output, "pydantic", None) is not None:
+            reflection_result = reflection_task_obj.output.pydantic
+        elif hasattr(reflection_task_obj.output, "raw"):
+            try:
+                reflection_result = ReflectionResult.model_validate_json(reflection_task_obj.output.raw)
+            except Exception:
+                pass
+
+    # Extract the guardrail result from the third-to-last task.
+    guardrail_task_obj = crew.tasks[-3]
+    guardrail_result: GuardrailResult | None = None
+    if guardrail_task_obj.output is not None:
+        if getattr(guardrail_task_obj.output, "pydantic", None) is not None:
+            guardrail_result = guardrail_task_obj.output.pydantic
+        elif hasattr(guardrail_task_obj.output, "raw"):
+            try:
+                guardrail_result = GuardrailResult.model_validate_json(guardrail_task_obj.output.raw)
+            except Exception:
+                pass
+
+    # Extract the report: use reflection result if available, otherwise fall back to report_task.
+    if reflection_result is not None:
+        report = reflection_result.report
     else:
-        report = ComplianceReport.model_validate_json(report_task_obj.output.raw)
+        # Fall back to the original report_task (fourth-to-last task)
+        report_task_obj = crew.tasks[-4]
+        if getattr(report_task_obj.output, "pydantic", None) is not None:
+            report = report_task_obj.output.pydantic
+        else:
+            report = ComplianceReport.model_validate_json(report_task_obj.output.raw)
 
     trace = _build_agent_trace(crew)
     metrics = _build_crew_metrics(trace)
 
-    return report, trace, metrics, guardrail_result
+    return report, trace, metrics, guardrail_result, evaluation_result
