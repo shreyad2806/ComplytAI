@@ -37,8 +37,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    s = Settings()
-    print("=" * 60)
-    print(s.model_dump())
-    print("=" * 60)
-    return s
+    return Settings()

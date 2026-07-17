@@ -97,16 +97,12 @@ async def analyse(request: Request) -> AnalysisResponse:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="CrewAI analysis failed") from error
 
     response = AnalysisResponse(
-    analysis_type=report.analysis_type,
-    report=report,
-    request_id=request_id,
-    agent_trace=agent_trace,
-    crew_metrics=crew_metrics,
-    evaluation=evaluation,
-)
-
-    print("=" * 80)
-    print(response.model_dump_json(indent=2))
-    print("=" * 80)
+        analysis_type=report.analysis_type,
+        report=report,
+        request_id=request_id,
+        agent_trace=agent_trace,
+        crew_metrics=crew_metrics,
+        evaluation=evaluation,
+    )
 
     return response
