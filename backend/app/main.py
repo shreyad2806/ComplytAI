@@ -25,7 +25,7 @@ async def analyse(request: Request) -> AnalysisResponse:
 
     request_id = str(uuid4())
     settings = get_settings()
-    report_memory = PineconeReportMemory.from_settings(settings)
+    report_memory = None
     try:
         content_type = request.headers.get("content-type", "")
         if "multipart/form-data" in content_type:
@@ -62,7 +62,7 @@ async def analyse(request: Request) -> AnalysisResponse:
             document_text=document_text,
             prompt=prompt,
         )
-        report, agent_trace, crew_metrics = run_compliance_crew(
+        report, agent_trace, crew_metrics = await run_compliance_crew(
             document_title=document_title,
             document_text=document_text,
             prompt=prompt,

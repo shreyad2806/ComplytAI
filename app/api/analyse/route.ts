@@ -2,28 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCanonicalReport, normalizeReport, parseJsonValue } from "@/lib/normalize-report";
 import type { AgentTrace, CrewMetrics } from "@/types";
 
-/** Used when only `N8N_BASE_URL` is set (e.g. http://localhost:5678) */
-const DEFAULT_WEBHOOK_PATH = "/webhook-test/complyt-ai";
-const ORCHESTRATION_MSG =
-  "Complyt AI orchestration engine is currently unavailable.";
+const BACKEND_MSG =
+  "Complyt FastAPI backend is currently unavailable.";
 
 const LOG = "[api/analyse]";
-const N8N_TIMEOUT_MS = 120_000;
+const BACKEND_TIMEOUT_MS = 120_000;
 
-function resolveWebhookUrl(): string | null {
-  const explicit = process.env.N8N_WEBHOOK_URL?.trim();
-  if (explicit) return explicit;
+const FASTAPI_URL =
+  process.env.FASTAPI_URL ??
+  "http://127.0.0.1:8000/analyse";
 
-  const base = process.env.N8N_BASE_URL?.trim();
-  if (base) {
-    const normalized = base.replace(/\/+$/, "");
-    return `${normalized}${DEFAULT_WEBHOOK_PATH}`;
-  }
-
-  return null;
-}
-
-function isNetworkOrchestrationError(err: unknown): boolean {
+function isBackendNetworkError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
   const name = err.name;
@@ -129,44 +118,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const webhookUrl = resolveWebhookUrl();
+    const backendUrl =
+    process.env.FASTAPI_URL ??
+    "http://127.0.0.1:8000/analyse";
+    
     console.info(`${LOG} request accepted`, {
       requestId,
       documentName,
       fileName: fileValue.name,
       fileSize: fileValue.size,
       fileType: fileValue.type || "application/octet-stream",
-      webhookConfigured: Boolean(webhookUrl),
+      backendUrl,
     });
-    if (!webhookUrl) {
-      console.error(
-        `${LOG} missing N8N_WEBHOOK_URL / N8N_BASE_URL — example: N8N_WEBHOOK_URL=http://localhost:5678/webhook-test/complyt-ai`
-      );
-      return NextResponse.json(
-        {
-          success: false,
-          error: ORCHESTRATION_MSG,
-          code: "ORCHESTRATION_UNAVAILABLE",
-        },
-        { status: 503 }
-      );
-    }
 
     const outbound = new FormData();
     outbound.append("file", fileValue, fileValue.name);
     outbound.append("prompt", prompt);
     outbound.append("document_name", documentName);
 
-    let n8nResponse: Response;
+    let backendResponse: Response;
     try {
-      n8nResponse = await fetch(webhookUrl, {
+      backendResponse = await fetch(backendUrl, {
         method: "POST",
         headers: {
           Accept: "application/json, text/plain, */*",
           "X-Complyt-Request-Id": requestId,
         },
         body: outbound,
-        signal: AbortSignal.timeout(N8N_TIMEOUT_MS),
+        signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
       });
     } catch (fetchErr) {
       console.error(`${LOG} webhook fetch failed`, {
@@ -175,11 +154,11 @@ export async function POST(request: NextRequest) {
         stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
         cause: fetchErr instanceof Error ? fetchErr.cause : undefined,
       });
-      if (isNetworkOrchestrationError(fetchErr)) {
+      if (isBackendNetworkError(fetchErr)) {
         return NextResponse.json(
           {
             success: false,
-            error: ORCHESTRATION_MSG,
+            error: BACKEND_MSG,
             code: "ORCHESTRATION_UNAVAILABLE",
           },
           { status: 503 }
@@ -188,11 +167,11 @@ export async function POST(request: NextRequest) {
       throw fetchErr;
     }
 
-    const raw = await n8nResponse.text();
-    const status = n8nResponse.status;
+    const raw = await backendResponse.text();
+    const status = backendResponse.status;
     console.info(`${LOG} n8n response received`, { requestId, status, responseCharacters: raw.length });
 
-    if (!n8nResponse.ok) {
+    if (!backendResponse.ok) {
       console.error(`${LOG} n8n HTTP error`, { status, rawLength: raw.length });
       return NextResponse.json(
         {
@@ -201,7 +180,7 @@ export async function POST(request: NextRequest) {
           code: "N8N_HTTP_ERROR",
           status,
         },
-        { status: 502 }
+        { status: backendResponse.status }
       );
     }
 
@@ -210,7 +189,7 @@ export async function POST(request: NextRequest) {
       console.error(`${LOG} invalid n8n response format`);
       return NextResponse.json(
         { success: false, error: "Invalid JSON returned from n8n", code: "INVALID_N8N_JSON" },
-        { status: 502 }
+        { status: backendResponse.status }
       );
     }
 
@@ -222,7 +201,7 @@ export async function POST(request: NextRequest) {
           error: "Invalid JSON returned from n8n",
           code: "INVALID_N8N_JSON",
         },
-        { status: 502 }
+        { status: backendResponse.status }
       );
     }
 
@@ -233,7 +212,7 @@ export async function POST(request: NextRequest) {
       if (!isCanonicalReport(normalized)) {
         return NextResponse.json(
           { success: false, error: "AI response did not contain a complete report", code: "INVALID_REPORT" },
-          { status: 502 }
+          { status: backendResponse.status }
         );
       }
       console.info(`${LOG} report normalized`, {
@@ -261,7 +240,7 @@ export async function POST(request: NextRequest) {
       console.error(`${LOG} normalization failed`, error);
       return NextResponse.json(
         { success: false, error: "Invalid report structure returned from AI", code: "INVALID_REPORT" },
-        { status: 502 }
+        { status: backendResponse.status }
       );
     }
   } catch (err) {
@@ -280,7 +259,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (isNetworkOrchestrationError(err)) {
+    if (isBackendNetworkError(err)) {
       console.error(`${LOG} orchestration / network error`, {
         error: err,
         message: err instanceof Error ? err.message : String(err),
@@ -289,7 +268,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: ORCHESTRATION_MSG,
+          error: BACKEND_MSG,
           code: "ORCHESTRATION_UNAVAILABLE",
         },
         { status: 503 }
