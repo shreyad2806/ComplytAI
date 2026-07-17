@@ -6,7 +6,6 @@ const BACKEND_MSG =
   "Complyt FastAPI backend is currently unavailable.";
 
 const LOG = "[api/analyse]";
-const BACKEND_TIMEOUT_MS = 120_000;
 
 const FASTAPI_URL =
   process.env.FASTAPI_URL ??
@@ -83,10 +82,7 @@ export async function POST(request: NextRequest) {
     try {
       formData = await request.formData();
     } catch (parseErr) {
-      console.error(`${LOG} invalid multipart body`, {
-        error: parseErr,
-        stack: parseErr instanceof Error ? parseErr.stack : undefined,
-      });
+      console.error(`${LOG} invalid multipart body error=${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
       return NextResponse.json(
         { error: "Invalid multipart body", code: "INVALID_MULTIPART" },
         { status: 400 }
@@ -103,7 +99,7 @@ export async function POST(request: NextRequest) {
         : "compliance-request";
 
     if (!prompt) {
-      console.error(`${LOG} invalid request`, { requestId, code: "MISSING_PROMPT" });
+      console.error(`${LOG} invalid request requestId=${requestId} code=MISSING_PROMPT`);
       return NextResponse.json(
         { error: "Missing or empty prompt", code: "MISSING_PROMPT" },
         { status: 400 }
@@ -111,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!(fileValue instanceof File) || fileValue.size === 0) {
-      console.error(`${LOG} invalid request`, { requestId, code: "MISSING_FILE" });
+      console.error(`${LOG} invalid request requestId=${requestId} code=MISSING_FILE`);
       return NextResponse.json(
         { error: "Missing or empty document file", code: "MISSING_FILE" },
         { status: 400 }
@@ -122,14 +118,7 @@ export async function POST(request: NextRequest) {
     process.env.FASTAPI_URL ??
     "http://127.0.0.1:8000/analyse";
     
-    console.info(`${LOG} request accepted`, {
-      requestId,
-      documentName,
-      fileName: fileValue.name,
-      fileSize: fileValue.size,
-      fileType: fileValue.type || "application/octet-stream",
-      backendUrl,
-    });
+    console.info(`${LOG} request accepted requestId=${requestId} documentName=${documentName} fileName=${fileValue.name} fileSize=${fileValue.size} fileType=${fileValue.type || "application/octet-stream"} backendUrl=${backendUrl}`);
 
     const outbound = new FormData();
     outbound.append("file", fileValue, fileValue.name);
@@ -145,15 +134,9 @@ export async function POST(request: NextRequest) {
           "X-Complyt-Request-Id": requestId,
         },
         body: outbound,
-        signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
       });
     } catch (fetchErr) {
-      console.error(`${LOG} webhook fetch failed`, {
-        error: fetchErr,
-        message: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
-        stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
-        cause: fetchErr instanceof Error ? fetchErr.cause : undefined,
-      });
+      console.error(`${LOG} webhook fetch failed message=${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)} cause=${fetchErr instanceof Error && fetchErr.cause ? String(fetchErr.cause) : "none"}`);
       if (isBackendNetworkError(fetchErr)) {
         return NextResponse.json(
           {
@@ -166,13 +149,17 @@ export async function POST(request: NextRequest) {
       }
       throw fetchErr;
     }
+    console.log("STATUS:", backendResponse.status);
+    console.log("OK:", backendResponse.ok);
 
     const raw = await backendResponse.text();
+    console.log(raw.substring(0, 500)); 
+
     const status = backendResponse.status;
-    console.info(`${LOG} n8n response received`, { requestId, status, responseCharacters: raw.length });
+    console.info(`${LOG} n8n response received requestId=${requestId} status=${status} responseCharacters=${raw.length}`);
 
     if (!backendResponse.ok) {
-      console.error(`${LOG} n8n HTTP error`, { status, rawLength: raw.length });
+      console.error(`${LOG} n8n HTTP error status=${status} rawLength=${raw.length}`);
       return NextResponse.json(
         {
           success: false,
@@ -206,7 +193,11 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      console.log("[TEMP] 1. Object.keys(data):", data && typeof data === "object" ? Object.keys(data) : "data is not an object");
+      console.log("[TEMP] 2. data:", JSON.stringify(data, null, 2));
       const normalized = normalizeReport(data);
+      console.log("[TEMP] 5. normalized:", JSON.stringify(normalized, null, 2));
+      console.log("[TEMP] 6. isCanonicalReport(normalized):", isCanonicalReport(normalized));
       const agentTrace = readAgentTrace(data);
       const crewMetrics = readCrewMetrics(data);
       if (!isCanonicalReport(normalized)) {
@@ -215,18 +206,7 @@ export async function POST(request: NextRequest) {
           { status: backendResponse.status }
         );
       }
-      console.info(`${LOG} report normalized`, {
-        requestId,
-        analysisType: normalized.analysis_type,
-        riskScore: normalized.risk_score,
-        sections: {
-          keyInsights: normalized.key_insights.length,
-          financialRisks: normalized.financial_risks.length,
-          complianceIssues: normalized.compliance_issues.length,
-          auditFlags: normalized.audit_flags.length,
-          recommendations: normalized.recommendations.length,
-        },
-      });
+      console.info(`${LOG} report normalized requestId=${requestId} analysisType=${normalized.analysis_type} riskScore=${normalized.risk_score} keyInsights=${normalized.key_insights.length} financialRisks=${normalized.financial_risks.length} complianceIssues=${normalized.compliance_issues.length} auditFlags=${normalized.audit_flags.length} recommendations=${normalized.recommendations.length}`);
       return NextResponse.json({
         success: true,
         platform: "n8n",
@@ -237,7 +217,7 @@ export async function POST(request: NextRequest) {
         ...(crewMetrics ? { crew_metrics: crewMetrics } : {}),
       });
     } catch (error) {
-      console.error(`${LOG} normalization failed`, error);
+      console.error(`${LOG} normalization failed error=${error instanceof Error ? error.message : String(error)}`);
       return NextResponse.json(
         { success: false, error: "Invalid report structure returned from AI", code: "INVALID_REPORT" },
         { status: backendResponse.status }
@@ -245,10 +225,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") {
-      console.error(`${LOG} timeout`, {
-        message: err.message,
-        stack: err.stack,
-      });
+      console.error(`${LOG} timeout message=${err.message}`);
       return NextResponse.json(
         {
           success: false,
@@ -260,11 +237,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (isBackendNetworkError(err)) {
-      console.error(`${LOG} orchestration / network error`, {
-        error: err,
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      });
+      console.error(`${LOG} orchestration / network error message=${err instanceof Error ? err.message : String(err)}`);
       return NextResponse.json(
         {
           success: false,
@@ -275,11 +248,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error(`${LOG} unhandled error`, {
-      error: err,
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
-    });
+    console.error(`${LOG} unhandled error message=${err instanceof Error ? err.message : String(err)}`);
 
     return NextResponse.json(
       {

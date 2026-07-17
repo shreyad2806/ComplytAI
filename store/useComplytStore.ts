@@ -45,9 +45,6 @@ export const useComplytStore = create<ComplytStore>((set) => ({
       });
 
       console.info("[copilot] analysis response received", {
-        requestId: response.request_id,
-        analysisType: response.analysis_type,
-        riskScore: response.report.risk_score,
         sections: {
           keyInsights: response.report.key_insights.length,
           financialRisks: response.report.financial_risks.length,
@@ -57,10 +54,6 @@ export const useComplytStore = create<ComplytStore>((set) => ({
         },
       });
       set({ analysisProgress: 75 });
-
-      if (!response.success) {
-        throw new Error("Analysis failed. Please try again.");
-      }
 
       const reportId = generateReportId();
       const persisted = buildPersistedReport(response, {

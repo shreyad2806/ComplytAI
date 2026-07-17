@@ -313,6 +313,8 @@ async def run_compliance_crew(
 
         result = await crew.kickoff_async()
 
+        print(result.raw[:3000])
+
         print(type(result))
         print(inspect.iscoroutine(result))
 
