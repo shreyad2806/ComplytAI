@@ -1,4 +1,5 @@
 import logging
+import time
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -7,6 +8,7 @@ from .config import get_settings
 from .crew import run_compliance_crew
 from .documents import DocumentExtractionError, extract_text
 from .memory import PineconeReportMemory, retrieve_related_reports, store_report
+from .retrieval import prepare_agent_contexts
 from .schemas import AnalysisResponse
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,10 @@ async def analyse(request: Request) -> AnalysisResponse:
 
     request_id = str(uuid4())
     settings = get_settings()
-    report_memory = None
+    report_memory = PineconeReportMemory.from_settings(settings)
+    workflow_start = time.perf_counter()
+    parse_seconds = 0.0
+
     try:
         content_type = request.headers.get("content-type", "")
         if "multipart/form-data" in content_type:
@@ -42,7 +47,9 @@ async def analyse(request: Request) -> AnalysisResponse:
             content = await file.read()
             if not content:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file is required")
+            parse_start = time.perf_counter()
             document_text = extract_text(filename, content, settings.crewai_max_document_chars)
+            parse_seconds = time.perf_counter() - parse_start
             document_title = document_name or filename
         else:
             payload = await request.json()
@@ -55,7 +62,21 @@ async def analyse(request: Request) -> AnalysisResponse:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="prompt is required")
             if not document_text:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="document_text is required")
+            parse_start = time.perf_counter()
             document_text = document_text[: settings.crewai_max_document_chars]
+            parse_seconds = time.perf_counter() - parse_start
+
+        print(f"[PERF] document_parse={parse_seconds:.3f}s")
+
+        agent_contexts = prepare_agent_contexts(
+            document_text=document_text,
+            prompt=prompt,
+            settings=settings,
+        )
+        print(
+            f"[PERF] chunking={agent_contexts.chunking_seconds:.3f}s "
+            f"retrieval={agent_contexts.retrieval_seconds:.3f}s"
+        )
 
         related_reports = retrieve_related_reports(
             report_memory,
@@ -64,10 +85,11 @@ async def analyse(request: Request) -> AnalysisResponse:
         )
         report, agent_trace, crew_metrics = await run_compliance_crew(
             document_title=document_title,
-            document_text=document_text,
             prompt=prompt,
             related_reports=related_reports,
             settings=settings,
+            document_analyst_context=agent_contexts.document_analyst,
+            compliance_officer_context=agent_contexts.compliance_officer,
         )
         store_report(report_memory, report_id=request_id, report=report)
     except DocumentExtractionError as error:
@@ -78,16 +100,13 @@ async def analyse(request: Request) -> AnalysisResponse:
         logger.exception("CrewAI analysis failed", extra={"request_id": request_id})
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="CrewAI analysis failed") from error
 
-    response = AnalysisResponse(
-    analysis_type=report.analysis_type,
-    report=report,
-    request_id=request_id,
-    agent_trace=agent_trace,
-    crew_metrics=crew_metrics,
-)
+    total_seconds = time.perf_counter() - workflow_start
+    print(f"[PERF] request_total={total_seconds:.3f}s")
 
-    print("=" * 80)
-    print(response.model_dump_json(indent=2))
-    print("=" * 80)
-
-    return response
+    return AnalysisResponse(
+        analysis_type=report.analysis_type,
+        report=report,
+        request_id=request_id,
+        agent_trace=agent_trace,
+        crew_metrics=crew_metrics,
+    )

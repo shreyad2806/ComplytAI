@@ -15,7 +15,12 @@ def extract_text(filename: str, content: bytes, max_characters: int) -> str:
     suffix = Path(filename).suffix.lower()
     try:
         if suffix == ".pdf":
-            text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(content)).pages)
+            parts: list[str] = []
+            for page_num, page in enumerate(PdfReader(BytesIO(content)).pages, start=1):
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    parts.append(f"[Page {page_num}]\n{page_text}")
+            text = "\n\n".join(parts)
         elif suffix == ".docx":
             text = "\n".join(paragraph.text for paragraph in Document(BytesIO(content)).paragraphs)
         elif suffix in {".txt", ".md", ".csv", ".json"}:

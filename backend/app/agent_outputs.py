@@ -1,85 +1,101 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-# ---------------------------------------------------------
-# Base Data Contracts
-# These models define the standard structures passed
-# between agents in the pipeline to avoid free-form text.
-# ---------------------------------------------------------
 
 class Evidence(BaseModel):
-    """Specific excerpts and locations supporting a finding."""
-    quote: str = Field(description="Exact quote from the document.")
-    page: str | None = Field(default=None, description="Page number or section if available.")
+    quote: str = Field(..., description="Evidence excerpt (max 300 chars)")
+    page: int | None = None
+
+    @field_validator("quote")
+    @classmethod
+    def cap_quote_length(cls, v: str) -> str:
+        if len(v) > 300:
+            return v[:297] + "..."
+        return v
+
 
 class Fact(BaseModel):
-    """Material fact extracted from the document."""
-    title: str = Field(description="Short title for the fact.")
-    description: str = Field(description="Detailed description of the fact.")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting this fact.")
+    title: str
+    description: str
+    evidence: Evidence
+
 
 class Control(BaseModel):
-    """Security, operational, or financial control identified in the document."""
-    name: str = Field(description="Name or title of the control.")
-    status: str = Field(description="Status of the control (e.g., active, missing, ineffective).")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting the control and status.")
+    name: str
+    status: str
+    evidence: Evidence
 
-# ---------------------------------------------------------
-# Agent Output Models
-# Each model corresponds to the strictly validated output
-# produced by a specific agent.
-# ---------------------------------------------------------
 
 class DocumentAnalysis(BaseModel):
-    """Output from the Document Analyst containing only grounded facts and controls."""
-    facts: list[Fact] = Field(default_factory=list, description="All material facts present in the document.")
-    controls: list[Control] = Field(default_factory=list, description="All controls identified in the document.")
+    facts: list[Fact] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Maximum 10 material facts from the document",
+    )
+    controls: list[Control] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Maximum 10 controls/policies mentioned in the document",
+    )
+
 
 class AMLFinding(BaseModel):
-    """Anti-money laundering or sanctions red flag."""
-    title: str = Field(description="Title of the AML finding.")
-    severity: str = Field(description="Severity of the finding (LOW, MEDIUM, HIGH, CRITICAL).")
-    description: str = Field(description="Detailed explanation of the risk.")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting this AML finding.")
+    title: str
+    description: str
+    risk_level: str
+    evidence: Evidence
+
 
 class AMLAnalysis(BaseModel):
-    """Output from the AML Specialist."""
-    findings: list[AMLFinding] = Field(default_factory=list, description="AML, KYC, and sanctions findings.")
+    findings: list[AMLFinding] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Maximum 5 material AML/sanctions/KYC findings (empty list if none)",
+    )
+
 
 class ComplianceIssue(BaseModel):
-    """Compliance gap or violation mapped to regulations."""
-    title: str = Field(description="Title of the compliance issue.")
-    severity: str = Field(description="Severity of the issue (LOW, MEDIUM, HIGH, CRITICAL).")
-    regulation: str = Field(description="The specific regulation or rule violated. State uncertainty if unknown.")
-    description: str = Field(description="Detailed explanation of the compliance gap.")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting this compliance issue.")
+    title: str
+    description: str
+    severity: str
+    regulation: str
+    evidence: Evidence
+
 
 class ComplianceAnalysis(BaseModel):
-    """Output from the Compliance Officer."""
-    issues: list[ComplianceIssue] = Field(default_factory=list, description="Evidence-backed compliance issues.")
+    issues: list[ComplianceIssue] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Maximum 5 material compliance issues (empty list if none)",
+    )
 
-class AuditFlag(BaseModel):
-    """Control failure or audit concern."""
-    title: str = Field(description="Title of the audit flag.")
-    severity: str = Field(description="Severity (LOW, MEDIUM, HIGH, CRITICAL).")
-    description: str = Field(description="Detailed explanation of the control failure or concern.")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting this audit flag.")
 
-class FinancialRisk(BaseModel):
-    """Financial exposure or business risk."""
-    title: str = Field(description="Title of the financial risk.")
-    severity: str = Field(description="Severity (LOW, MEDIUM, HIGH, CRITICAL).")
-    impact: str = Field(description="Description of the business or financial impact.")
-    evidence: list[Evidence] = Field(default_factory=list, description="Evidence supporting this financial risk.")
+class AuditFinding(BaseModel):
+    title: str
+    description: str
+    severity: str
+    evidence: Evidence
 
-class Recommendation(BaseModel):
-    """Proposed remediation action."""
-    title: str = Field(description="Title of the recommendation.")
-    priority: str = Field(description="Priority for remediation (LOW, MEDIUM, HIGH, CRITICAL).")
-    description: str = Field(description="Detailed steps for remediation.")
-    related_issue: str = Field(description="The finding or issue this recommendation addresses.")
+
+class AuditRecommendation(BaseModel):
+    title: str
+    description: str
+    priority: str
+    evidence: Evidence
+
 
 class AuditAnalysis(BaseModel):
-    """Output from the Risk Auditor."""
-    financial_risks: list[FinancialRisk] = Field(default_factory=list, description="Identified financial risks.")
-    audit_flags: list[AuditFlag] = Field(default_factory=list, description="Identified audit flags.")
-    recommendations: list[Recommendation] = Field(default_factory=list, description="Prioritized recommendations.")
+    financial_risks: list[AuditFinding] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Maximum 5 material financial risks (empty list if none)",
+    )
+    audit_flags: list[AuditFinding] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Maximum 5 material audit flags (empty list if none)",
+    )
+    recommendations: list[AuditRecommendation] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Maximum 5 actionable recommendations (empty list if none)",
+    )

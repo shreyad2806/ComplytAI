@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     pinecone_namespace: str = Field(default="complyt-reports", alias="PINECONE_NAMESPACE")
     pinecone_top_k: int = Field(default=3, alias="PINECONE_TOP_K")
 
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        alias="OPENAI_EMBEDDING_MODEL",
+    )
+
+    rag_chunk_size: int = Field(default=1200, alias="RAG_CHUNK_SIZE")
+    rag_top_k: int = Field(default=8, alias="RAG_TOP_K")
+
 
 @lru_cache
 def get_settings() -> Settings:
