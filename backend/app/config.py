@@ -3,19 +3,16 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env.local",
         extra="ignore",
     )
 
-    ollama_base_url: str = Field(
-    default="http://127.0.0.1:11434",
-    alias="OLLAMA_BASE_URL",
-)
-
+    # Gemini is the hosted default. Set GOOGLE_API_KEY in the deployment environment.
     crewai_model: str = Field(
-        default="ollama/qwen2.5:3b",
+        default="gemini/gemini-2.5-flash",
         alias="CREWAI_MODEL",
     )
 
@@ -46,8 +43,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    s = Settings()
-    print("=" * 60)
-    print(s.model_dump())
-    print("=" * 60)
-    return s
+    # Avoid printing settings: deployment environments may contain secrets.
+    return Settings()
