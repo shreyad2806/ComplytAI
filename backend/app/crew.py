@@ -23,9 +23,10 @@ def build_compliance_crew(
     compliance_officer_context: str,
 ) -> Crew:
     """Build the five-role crew and a final task that emits the frontend report schema."""
+    # LiteLLM reads GOOGLE_API_KEY from the environment for Gemini.
+    # Do not pass an Ollama base_url when using a hosted provider.
     llm = LLM(
         model=settings.crewai_model,
-        base_url=settings.ollama_base_url,
         temperature=settings.crewai_temperature,
     )
 
